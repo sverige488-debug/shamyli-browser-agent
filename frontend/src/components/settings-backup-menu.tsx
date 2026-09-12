@@ -85,7 +85,7 @@ export function SettingsBackupMenu() {
           <div className="px-3 py-2 border-b border-zinc-800">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Load / save settings</div>
             <p className="mt-1 text-[11px] leading-4 text-zinc-500">
-              Reuses the old Web UI config workflow for the modern UI. API keys are not included because secrets stay in .env.
+              Saves model, browser, agent, and MCP configuration. API keys and MCP secret values are never included; MCP stores environment-variable names only.
             </p>
           </div>
           <div className="p-3 grid grid-cols-2 gap-2">
