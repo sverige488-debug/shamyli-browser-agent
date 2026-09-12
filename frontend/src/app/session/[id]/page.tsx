@@ -2,11 +2,13 @@
 
 import { useParams, useSearchParams } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
-import { CircleHelp, Pause, Play, Square } from "lucide-react";
+import { CircleHelp, Download, Film, Pause, Play, Square } from "lucide-react";
 import { SessionProvider, useSession } from "@/context/session-context";
 import { ChatInput } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { BrowserPanel } from "@/components/browser-panel";
+
+const LOCAL_API = process.env.NEXT_PUBLIC_LOCAL_AGENT_API ?? "http://127.0.0.1:8000";
 
 function SessionPage() {
   const {
@@ -38,7 +40,28 @@ function SessionPage() {
   return (
     <div className="flex h-screen w-full overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="h-11 px-4 border-b border-zinc-800 flex items-center justify-end">
+        <div className="h-11 px-4 border-b border-zinc-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {session?.historyAvailable && (
+              <a
+                href={`${LOCAL_API}/sessions/${encodeURIComponent(sessionId)}/history`}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-zinc-700 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                title="Download the latest native Browser Use agent history"
+              >
+                <Download size={13} /> History
+              </a>
+            )}
+            {session?.gifAvailable && (
+              <a
+                href={`${LOCAL_API}/sessions/${encodeURIComponent(sessionId)}/gif`}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-zinc-700 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                title="Download the latest Browser Use generated GIF"
+              >
+                <Film size={13} /> GIF
+              </a>
+            )}
+          </div>
+
           {isBusy && !isTerminal && (
             <button
               type="button"
