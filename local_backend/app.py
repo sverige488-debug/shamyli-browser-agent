@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from browser_use import (
     Agent,
+    BrowserProfile,
     BrowserSession,
     ChatAnthropic,
     ChatGoogle,
@@ -23,7 +27,14 @@ from browser_use import (
     ChatOpenRouter,
 )
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.1.0")
+# Reuse the environment variable names already shipped by Browser Use Web UI.
+# Root .env is the primary configuration file; local_backend/.env can override
+# only variables that are not already present in the process/root file.
+ROOT_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT_DIR / ".env", override=False)
+load_dotenv(Path(__file__).with_name(".env"), override=False)
+
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -58,6 +69,23 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 def parse_model_spec(spec: str) -> tuple[str, str]:
     if "::" not in spec:
         raise ValueError("Model must use provider::model format")
@@ -70,6 +98,7 @@ def parse_model_spec(spec: str) -> tuple[str, str]:
 
 
 def build_llm(spec: str):
+    """Thin selector over Browser Use's native, tested provider classes."""
     provider, model = parse_model_spec(spec)
     if provider == "openrouter":
         return ChatOpenRouter(model=model)
@@ -84,6 +113,53 @@ def build_llm(spec: str):
     if provider == "ollama":
         return ChatOllama(model=model, num_ctx=32000)
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def build_browser_session() -> BrowserSession:
+    """Map the existing Browser Use Web UI browser settings onto current BrowserProfile."""
+    keep_alive = env_bool("KEEP_BROWSER_OPEN", True)
+    use_own_browser = env_bool("USE_OWN_BROWSER", False)
+    headless = env_bool("BROWSER_HEADLESS", False)
+    disable_security = env_bool("DISABLE_SECURITY", False)
+    width = env_int("RESOLUTION_WIDTH", 1920)
+    height = env_int("RESOLUTION_HEIGHT", 1080)
+
+    cdp_url = (os.getenv("BROWSER_CDP") or "").strip() or None
+    browser_path = (os.getenv("BROWSER_PATH") or "").strip() or None
+    user_data_dir = (os.getenv("BROWSER_USER_DATA") or "").strip() or None
+
+    profile_kwargs: dict[str, Any] = {
+        "headless": headless,
+        "disable_security": disable_security,
+        "keep_alive": keep_alive,
+        "window_size": {"width": width, "height": height},
+    }
+
+    # Current Browser Use core natively supports CDP, executable_path and
+    # user_data_dir. We only translate the old Web UI setting names here.
+    if cdp_url:
+        profile_kwargs["cdp_url"] = cdp_url
+    elif use_own_browser:
+        if browser_path:
+            profile_kwargs["executable_path"] = browser_path
+        if user_data_dir:
+            profile_kwargs["user_data_dir"] = user_data_dir
+
+    return BrowserSession(browser_profile=BrowserProfile(**profile_kwargs))
+
+
+def browser_settings_snapshot() -> dict[str, Any]:
+    return {
+        "keepBrowserOpen": env_bool("KEEP_BROWSER_OPEN", True),
+        "useOwnBrowser": env_bool("USE_OWN_BROWSER", False),
+        "headless": env_bool("BROWSER_HEADLESS", False),
+        "disableSecurity": env_bool("DISABLE_SECURITY", False),
+        "browserPathConfigured": bool((os.getenv("BROWSER_PATH") or "").strip()),
+        "browserUserDataConfigured": bool((os.getenv("BROWSER_USER_DATA") or "").strip()),
+        "cdpConfigured": bool((os.getenv("BROWSER_CDP") or "").strip()),
+        "windowWidth": env_int("RESOLUTION_WIDTH", 1920),
+        "windowHeight": env_int("RESOLUTION_HEIGHT", 1080),
+    }
 
 
 def message(role: str, data: dict[str, Any], message_id: str | None = None) -> dict[str, Any]:
@@ -126,7 +202,12 @@ def action_to_tool_calls(output: Any, step: int) -> list[dict[str, Any]]:
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "mode": "local", "browserUseCloudRequired": False}
+    return {
+        "ok": True,
+        "mode": "local",
+        "browserUseCloudRequired": False,
+        "browserSettings": browser_settings_snapshot(),
+    }
 
 
 @app.get("/models")
@@ -153,10 +234,33 @@ async def create_session(body: CreateSessionRequest):
     session_id = str(uuid.uuid4())
     sessions[session_id] = LocalSession(
         id=session_id,
-        browser=BrowserSession(),
+        browser=build_browser_session(),
         model_spec=body.model,
     )
     return {"id": session_id, "liveUrl": None, "status": "created"}
+
+
+@app.get("/sessions/{session_id}/screenshot")
+async def session_screenshot(session_id: str):
+    """Reuse BrowserSession.take_screenshot(), the same capability used by Web UI/core."""
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status == "created":
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+    try:
+        data = await session.browser.take_screenshot(full_page=False)
+    except Exception:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+    if not data:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 @app.post("/sessions/{session_id}/run")
@@ -164,7 +268,7 @@ async def run_session(session_id: str, body: RunRequest):
     session = sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status == "running":
+    if session.status in {"running", "paused"}:
         raise HTTPException(status_code=409, detail="Session is already running")
 
     async def event_stream():
@@ -176,7 +280,6 @@ async def run_session(session_id: str, body: RunRequest):
 
         def emit(item: dict[str, Any] | None) -> None:
             # Browser Use callbacks may be invoked outside the request coroutine.
-            # Marshal queue writes back onto the FastAPI event loop safely.
             loop.call_soon_threadsafe(queue.put_nowait, item)
 
         def on_step(state: Any, output: Any, step: int):
@@ -245,6 +348,30 @@ async def run_session(session_id: str, body: RunRequest):
                 task.cancel()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/sessions/{session_id}/pause")
+async def pause_session(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.agent is None or session.status != "running":
+        raise HTTPException(status_code=409, detail="No running agent to pause")
+    session.agent.pause()
+    session.status = "paused"
+    return {"ok": True, "status": session.status}
+
+
+@app.post("/sessions/{session_id}/resume")
+async def resume_session(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.agent is None or session.status != "paused":
+        raise HTTPException(status_code=409, detail="No paused agent to resume")
+    session.agent.resume()
+    session.status = "running"
+    return {"ok": True, "status": session.status}
 
 
 @app.post("/sessions/{session_id}/stop")
