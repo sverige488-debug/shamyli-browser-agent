@@ -13,6 +13,7 @@ from app import (
     build_browser_session,
     build_session_tools,
     default_browser_settings,
+    default_llm_settings,
     sessions,
     submit_assistance_response,
 )
@@ -23,6 +24,7 @@ async def main() -> None:
         id="assistance-smoke",
         browser=build_browser_session(default_browser_settings()),
         model_spec="ollama::smoke",
+        llm_settings=default_llm_settings(),
         browser_settings=default_browser_settings(),
     )
     sessions[session.id] = session
