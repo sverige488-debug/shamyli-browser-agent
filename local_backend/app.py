@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from browser_use import (
+    ActionResult,
     Agent,
     BrowserProfile,
     BrowserSession,
@@ -25,6 +26,7 @@ from browser_use import (
     ChatOllama,
     ChatOpenAI,
     ChatOpenRouter,
+    Tools,
 )
 
 # Reuse the environment variable names already shipped by Browser Use Web UI.
@@ -34,7 +36,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.5.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.6.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -83,6 +85,10 @@ class RunRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class AssistanceResponseRequest(BaseModel):
+    response: str = Field(min_length=1, max_length=20_000)
+
+
 @dataclass
 class LocalSession:
     id: str
@@ -91,6 +97,9 @@ class LocalSession:
     browser_settings: BrowserSettings
     status: str = "created"
     agent: Agent | None = None
+    assistance_event: asyncio.Event | None = None
+    assistance_question: str | None = None
+    assistance_response: str | None = None
 
 
 sessions: dict[str, LocalSession] = {}
@@ -258,6 +267,84 @@ def action_to_tool_calls(output: Any, step: int) -> list[dict[str, Any]]:
     return calls
 
 
+def build_session_tools(session: LocalSession, emit: Callable[[dict[str, Any] | None], None]) -> Tools:
+    """Reuse Browser Use's current Tools registry and port Web UI's help action.
+
+    The legacy Web UI shipped `ask_for_assistant` as a custom Controller action.
+    Browser Use 0.13.10 renamed Controller to Tools, so this is a thin adaptation
+    of that proven interaction pattern rather than a new browser/action engine.
+    """
+
+    tools = Tools()
+
+    @tools.action(
+        "When executing tasks, prioritize autonomous completion. If you encounter a definitive blocker that prevents "
+        "independent progress — such as credentials you do not possess, subjective human judgment, a physical action, "
+        "a complex CAPTCHA, or a capability limitation — request human assistance. Explain exactly what the human "
+        "needs to provide or do, then wait for their response before continuing.",
+        terminates_sequence=True,
+    )
+    async def ask_for_assistant(query: str):
+        query = query.strip()
+        if not query:
+            return ActionResult(error="Human assistance request was empty.")
+
+        if session.assistance_event is not None and not session.assistance_event.is_set():
+            return ActionResult(error="A human assistance request is already pending.")
+
+        session.assistance_question = query
+        session.assistance_response = None
+        session.assistance_event = asyncio.Event()
+        session.status = "waiting_for_user"
+
+        emit(
+            message(
+                "assistant",
+                {
+                    "content": (
+                        f"Need Help: {query}\n\n"
+                        "You can perform the required action in the live browser if needed, then send your response below."
+                    )
+                },
+            )
+        )
+        emit({"__assistance": True, "question": query, "status": "waiting_for_user"})
+
+        try:
+            await asyncio.wait_for(session.assistance_event.wait(), timeout=3600.0)
+        except asyncio.TimeoutError:
+            session.assistance_event = None
+            session.assistance_question = None
+            session.assistance_response = None
+            if session.status != "stopped":
+                session.status = "running"
+            emit({"__assistance_resolved": True, "status": session.status, "timedOut": True})
+            return ActionResult(
+                extracted_content="Human assistance timed out after one hour. Try another safe approach if possible.",
+                long_term_memory="Human assistance timed out; no user response was received.",
+            )
+
+        response = (session.assistance_response or "").strip()
+        was_stopped = session.status == "stopped"
+        session.assistance_event = None
+        session.assistance_question = None
+        session.assistance_response = None
+
+        if was_stopped:
+            emit({"__assistance_resolved": True, "status": "stopped"})
+            return ActionResult(error="The user stopped the task while human assistance was pending.")
+
+        session.status = "running"
+        emit(message("user", {"content": response or "Done"}))
+        emit({"__assistance_resolved": True, "status": "running"})
+        return ActionResult(
+            extracted_content=f"Human response: {response or 'Done'}",
+            long_term_memory=f"Human assistance response: {response or 'Done'}",
+        )
+
+    return tools
+
+
 @app.get("/health")
 async def health():
     return {
@@ -339,7 +426,7 @@ async def run_session(session_id: str, body: RunRequest):
     session = sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status in {"running", "paused"}:
+    if session.status in {"running", "paused", "waiting_for_user"}:
         raise HTTPException(status_code=409, detail="Session is already running")
 
     async def event_stream():
@@ -382,10 +469,12 @@ async def run_session(session_id: str, body: RunRequest):
         async def runner():
             try:
                 llm = build_llm(session.model_spec)
+                tools = build_session_tools(session, emit)
                 agent = Agent(
                     task=body.task,
                     llm=llm,
                     browser_session=session.browser,
+                    tools=tools,
                     register_new_step_callback=on_step,
                     use_vision=body.use_vision,
                     max_actions_per_step=body.max_actions_per_step,
@@ -427,6 +516,9 @@ async def run_session(session_id: str, body: RunRequest):
                 )
             finally:
                 session.agent = None
+                session.assistance_event = None
+                session.assistance_question = None
+                session.assistance_response = None
                 await queue.put(None)
 
         task = asyncio.create_task(runner())
@@ -441,6 +533,23 @@ async def run_session(session_id: str, body: RunRequest):
                 task.cancel()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/sessions/{session_id}/assistance-response")
+async def submit_assistance_response(session_id: str, body: AssistanceResponseRequest):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != "waiting_for_user" or session.assistance_event is None:
+        raise HTTPException(status_code=409, detail="No human assistance request is pending")
+
+    response = body.response.strip()
+    if not response:
+        raise HTTPException(status_code=400, detail="Assistance response cannot be empty")
+
+    session.assistance_response = response
+    session.assistance_event.set()
+    return {"ok": True, "status": "resuming"}
 
 
 @app.post("/sessions/{session_id}/pause")
@@ -475,6 +584,9 @@ async def stop_session(session_id: str):
     if session.agent is not None:
         session.agent.stop()
     session.status = "stopped"
+    if session.assistance_event is not None and not session.assistance_event.is_set():
+        session.assistance_response = "Task stopped by user."
+        session.assistance_event.set()
     return {"ok": True, "status": session.status}
 
 
@@ -483,6 +595,9 @@ async def close_session(session_id: str):
     session = sessions.pop(session_id, None)
     if not session:
         return {"ok": True}
+    if session.assistance_event is not None and not session.assistance_event.is_set():
+        session.assistance_response = "Session closed by user."
+        session.assistance_event.set()
     try:
         await session.browser.kill()
     except Exception:
