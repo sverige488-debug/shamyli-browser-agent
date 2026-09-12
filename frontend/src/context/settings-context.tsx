@@ -44,6 +44,7 @@ const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   saveAgentHistoryPath: "./tmp/agent_history",
 };
 const FALLBACK_AGENT_SETTINGS: AgentSettings = {
+  interactionMode: "inspect",
   maxSteps: 25,
   maxActionsPerStep: 5,
   useVision: true,
@@ -95,6 +96,7 @@ function normalizeAgentSettings(raw?: Partial<AgentSettings> | null): AgentSetti
   const planningReplanOnStall = Math.min(20, Math.max(1, Number(raw?.planningReplanOnStall) || FALLBACK_AGENT_SETTINGS.planningReplanOnStall));
   const planningExplorationLimit = Math.min(50, Math.max(1, Number(raw?.planningExplorationLimit) || FALLBACK_AGENT_SETTINGS.planningExplorationLimit));
   return {
+    interactionMode: raw?.interactionMode === "full" ? "full" : "inspect",
     maxSteps,
     maxActionsPerStep,
     useVision: raw?.useVision ?? FALLBACK_AGENT_SETTINGS.useVision,
