@@ -12,6 +12,7 @@ from pathlib import Path
 from browser_use import Agent, ChatOllama, ChatOpenAI, ChatOpenRouter
 
 from app import (
+    INSPECT_EXCLUDED_ACTIONS,
     BrowserSettings,
     LLMSettings,
     LocalSession,
@@ -19,6 +20,7 @@ from app import (
     browser_settings_snapshot,
     build_browser_session,
     build_llm,
+    build_session_tools,
     llm_settings_snapshot,
     session_artifact_paths,
 )
@@ -105,8 +107,21 @@ def main() -> None:
         assert history_path.name == "run-smoke.json"
         assert gif_path.name == "run-smoke.gif"
 
+        inspect_tools = build_session_tools(local_session, lambda _: None, "inspect")
+        inspect_action_names = set(inspect_tools.registry.registry.actions)
+        for action_name in INSPECT_EXCLUDED_ACTIONS:
+            assert action_name not in inspect_action_names, f"Inspect mode unexpectedly exposes {action_name}"
+        assert "ask_for_assistant" in inspect_action_names
+
+        full_tools = build_session_tools(local_session, lambda _: None, "full")
+        full_action_names = set(full_tools.registry.registry.actions)
+        for action_name in INSPECT_EXCLUDED_ACTIONS:
+            assert action_name in full_action_names, f"Full-control mode is missing native action {action_name}"
+        assert "ask_for_assistant" in full_action_names
+
     run = RunRequest(
         task="smoke",
+        interactionMode="full",
         maxSteps=12,
         maxActionsPerStep=3,
         useVision=False,
@@ -117,6 +132,8 @@ def main() -> None:
         overrideSystemPrompt="override smoke",
         extendSystemPrompt="extend smoke",
     )
+    assert run.interaction_mode == "full"
+    assert RunRequest(task="default safety").interaction_mode == "inspect"
     assert run.max_steps == 12
     assert run.max_actions_per_step == 3
     assert run.use_vision is False
