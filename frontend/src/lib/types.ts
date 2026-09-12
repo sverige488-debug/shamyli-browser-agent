@@ -16,11 +16,16 @@ export interface BrowserSettings {
   saveRecordingPath: string;
   tracePath: string;
   saveDownloadPath: string;
+  saveAgentHistoryPath: string;
 }
 export interface AgentSettings {
   maxSteps: number;
   maxActionsPerStep: number;
   useVision: boolean;
+  generateGif: boolean;
+  enablePlanning: boolean;
+  planningReplanOnStall: number;
+  planningExplorationLimit: number;
 }
 export interface UIMessage { id: string; role: "user" | "assistant"; content: string; toolCalls?: UIToolCall[]; createdAt: string; }
 export interface UIToolCall { id: string; name: string; displayName: string; displayValue: string; args: Record<string, unknown>; status: ToolStatus; result?: string; isError?: boolean; type: ToolCallType; }
