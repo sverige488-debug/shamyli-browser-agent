@@ -13,7 +13,7 @@ from browser_use import Tools
 from browser_use.mcp.client import MCPClient as NativeMCPClient
 
 import mcp_support
-from mcp_support import MCPServerSettings, connect_mcp_servers, disconnect_mcp_clients, resolve_mcp_env
+from mcp_support import MCPServerSettings, connect_mcp_servers, disconnect_mcp_clients, mcp_action_prefix, resolve_mcp_env
 
 
 class FakeMCPClient:
@@ -54,6 +54,8 @@ async def main() -> None:
     assert server.tool_filter == ["read_page"]
     assert server.prefix == "demo_"
     assert server.model_dump(by_alias=True)["envKeys"] == ["SHAMYLI_MCP_TEST_TOKEN"]
+    assert mcp_action_prefix(server) == "mcp_demo_"
+    assert mcp_action_prefix(MCPServerSettings(name="GitHub Server", command="x")) == "mcp_github_server_"
 
     try:
         MCPServerSettings(name="bad", command="npx", envKeys=["BAD=VALUE"])
@@ -96,10 +98,18 @@ async def main() -> None:
         assert fake.env["SHAMYLI_MCP_TEST_TOKEN"] == "local-secret-value"
         assert "OPENAI_API_KEY" not in fake.env
         assert fake.register_calls[0]["tool_filter"] == ["read_page"]
-        assert fake.register_calls[0]["prefix"] == "demo_"
+        assert fake.register_calls[0]["prefix"] == "mcp_demo_"
 
         await disconnect_mcp_clients(clients)  # type: ignore[arg-type]
         assert fake.disconnected is True
+
+        duplicate_a = MCPServerSettings(name="one", command="x", prefix="shared")
+        duplicate_b = MCPServerSettings(name="two", command="y", prefix="shared")
+        try:
+            await connect_mcp_servers(tools, [duplicate_a, duplicate_b], "full")
+            raise AssertionError("Duplicate MCP action namespace was accepted")
+        except ValueError as exc:
+            assert "unique" in str(exc)
     finally:
         mcp_support.MCPClient = original_client
 
