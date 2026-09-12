@@ -73,6 +73,8 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
         enablePlanning: agentSettings.enablePlanning,
         planningReplanOnStall: agentSettings.planningReplanOnStall,
         planningExplorationLimit: agentSettings.planningExplorationLimit,
+        overrideSystemPrompt: agentSettings.overrideSystemPrompt,
+        extendSystemPrompt: agentSettings.extendSystemPrompt,
       }),
     });
     if (!res.ok || !res.body) throw new Error(await res.text());
@@ -110,9 +112,11 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
     if (streamError) throw streamError;
   }, [
     agentSettings.enablePlanning,
+    agentSettings.extendSystemPrompt,
     agentSettings.generateGif,
     agentSettings.maxActionsPerStep,
     agentSettings.maxSteps,
+    agentSettings.overrideSystemPrompt,
     agentSettings.planningExplorationLimit,
     agentSettings.planningReplanOnStall,
     agentSettings.useVision,
