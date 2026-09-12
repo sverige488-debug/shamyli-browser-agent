@@ -31,6 +31,7 @@ services:
 
       # Existing noVNC stack. Password is intentionally not placed in the browser URL.
       - VNC_PASSWORD=${VNC_PASSWORD:-shamyli-local}
+      - SHAMYLI_LIVE_BROWSER_URL=${SHAMYLI_LIVE_BROWSER_URL:-http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale}
 
       - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}
       - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
