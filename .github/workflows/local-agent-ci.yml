@@ -48,6 +48,8 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: pip install -r local_backend/requirements.txt
+      - name: Install uv required by Browser Use installer
+        run: python -m pip install uv
       - name: Install Browser Use Chromium
         run: browser-use install
       - name: Run real local-browser smoke test
