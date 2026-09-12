@@ -31,6 +31,15 @@ export async function stopTask(id: string) {
   await checked(await fetch(`${API}/sessions/${id}/stop`, { method: "POST", cache: "no-store" }));
 }
 
+export async function submitAssistance(id: string, response: string) {
+  await checked(await fetch(`${API}/sessions/${id}/assistance-response`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ response }),
+    cache: "no-store",
+  }));
+}
+
 export async function listModelPresets(): Promise<ModelPreset[]> {
   try {
     const res = await checked(await fetch(`${API}/models`, { cache: "no-store" }));
