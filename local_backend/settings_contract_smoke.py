@@ -1,11 +1,11 @@
-"""Fast contract smoke test for the Web UI -> BrowserProfile settings adapter.
+"""Fast contract smoke tests for the thin modern-UI -> Browser Use adapters.
 
 This intentionally does not launch a browser. The real browser launch is already
-covered by browser_smoke.py on Windows and Ubuntu. Here we only verify that the
-modern UI contract is translated into Browser Use 0.13.10 native profile fields.
+covered by browser_smoke.py on Windows and Ubuntu. Here we verify that modern UI
+contracts translate into Browser Use 0.13.10 native profile/agent fields.
 """
 
-from app import BrowserSettings, browser_settings_snapshot, build_browser_session
+from app import BrowserSettings, RunRequest, browser_settings_snapshot, build_browser_session
 
 
 def main() -> None:
@@ -47,7 +47,12 @@ def main() -> None:
     assert api_shape["tracePath"] == "./tmp/traces"
     assert api_shape["saveDownloadPath"] == "./tmp/downloads"
 
-    print("SHAMYLI browser settings adapter smoke: PASS")
+    run = RunRequest(task="smoke", maxSteps=12, maxActionsPerStep=3, useVision=False)
+    assert run.max_steps == 12
+    assert run.max_actions_per_step == 3
+    assert run.use_vision is False
+
+    print("SHAMYLI settings adapter smoke: PASS")
 
 
 if __name__ == "__main__":
