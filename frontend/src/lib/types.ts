@@ -23,6 +23,15 @@ export interface BrowserSettings {
   saveDownloadPath: string;
   saveAgentHistoryPath: string;
 }
+export interface MCPServerSettings {
+  name: string;
+  command: string;
+  args: string[];
+  envKeys: string[];
+  toolFilter: string[];
+  prefix: string;
+  enabled: boolean;
+}
 export type InteractionMode = "inspect" | "full";
 export interface AgentSettings {
   interactionMode: InteractionMode;
@@ -35,6 +44,7 @@ export interface AgentSettings {
   planningExplorationLimit: number;
   overrideSystemPrompt: string;
   extendSystemPrompt: string;
+  mcpServers: MCPServerSettings[];
 }
 export interface UIMessage { id: string; role: "user" | "assistant"; content: string; toolCalls?: UIToolCall[]; createdAt: string; }
 export interface UIToolCall { id: string; name: string; displayName: string; displayValue: string; args: Record<string, unknown>; status: ToolStatus; result?: string; isError?: boolean; type: ToolCallType; }
