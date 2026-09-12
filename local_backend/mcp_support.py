@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from browser_use import Tools
 from browser_use.mcp.client import MCPClient
+
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class MCPServerSettings(BaseModel):
@@ -32,7 +35,7 @@ class MCPServerSettings(BaseModel):
     def strip_text(cls, value: str) -> str:
         return value.strip()
 
-    @field_validator("args", "env_keys", "tool_filter")
+    @field_validator("args", "tool_filter")
     @classmethod
     def normalize_string_list(cls, values: list[str]) -> list[str]:
         normalized: list[str] = []
@@ -45,33 +48,46 @@ class MCPServerSettings(BaseModel):
             normalized.append(item)
         return normalized
 
+    @field_validator("env_keys")
+    @classmethod
+    def normalize_env_keys(cls, values: list[str]) -> list[str]:
+        normalized = cls.normalize_string_list(values)
+        invalid = [key for key in normalized if not _ENV_KEY_RE.fullmatch(key)]
+        if invalid:
+            raise ValueError(f"Invalid environment variable name: {invalid[0]}")
+        return normalized
 
-# Keep process-discovery basics available without forwarding every backend secret.
+
+# Minimal non-secret process environment required to discover executables and
+# standard user/cache directories. Provider API keys and unrelated backend
+# variables are deliberately absent unless their exact names are allow-listed.
 _PLATFORM_ENV_KEYS = (
     "PATH",
     "HOME",
     "USER",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
     "TMP",
     "TEMP",
     "TMPDIR",
     "SYSTEMROOT",
+    "WINDIR",
     "COMSPEC",
     "PATHEXT",
 )
 
 
-def resolve_mcp_env(env_keys: list[str]) -> dict[str, str] | None:
-    """Resolve an allow-list of environment variable names to local values.
+def resolve_mcp_env(env_keys: list[str]) -> dict[str, str]:
+    """Build a least-privilege environment for an external MCP subprocess.
 
-    ``None`` lets the MCP SDK inherit its normal environment when no explicit
-    keys were requested. When keys are requested, only process-discovery basics
-    plus those exact names are forwarded.
+    Only standard process-discovery variables plus explicitly allow-listed names
+    are forwarded. Returning an explicit mapping even when ``envKeys`` is empty
+    prevents an MCP subprocess from inheriting unrelated backend secrets such as
+    LLM provider API keys.
     """
 
     requested = [key.strip() for key in env_keys if key.strip()]
-    if not requested:
-        return None
-
     resolved: dict[str, str] = {}
     for key in (*_PLATFORM_ENV_KEYS, *requested):
         if key in resolved:
