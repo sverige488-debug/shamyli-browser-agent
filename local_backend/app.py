@@ -12,7 +12,7 @@ from typing import Any, Callable
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from browser_use import (
@@ -36,7 +36,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.6.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.7.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -67,6 +67,7 @@ class BrowserSettings(BaseModel):
     save_recording_path: str = Field(default="", alias="saveRecordingPath")
     trace_path: str = Field(default="", alias="tracePath")
     save_download_path: str = Field(default="./tmp/downloads", alias="saveDownloadPath")
+    save_agent_history_path: str = Field(default="./tmp/agent_history", alias="saveAgentHistoryPath")
 
 
 class CreateSessionRequest(BaseModel):
@@ -81,6 +82,10 @@ class RunRequest(BaseModel):
     max_steps: int = Field(default=25, ge=1, le=100, alias="maxSteps")
     max_actions_per_step: int = Field(default=5, ge=1, le=20, alias="maxActionsPerStep")
     use_vision: bool = Field(default=True, alias="useVision")
+    generate_gif: bool = Field(default=False, alias="generateGif")
+    enable_planning: bool = Field(default=True, alias="enablePlanning")
+    planning_replan_on_stall: int = Field(default=3, ge=1, le=20, alias="planningReplanOnStall")
+    planning_exploration_limit: int = Field(default=5, ge=1, le=50, alias="planningExplorationLimit")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -100,6 +105,9 @@ class LocalSession:
     assistance_event: asyncio.Event | None = None
     assistance_question: str | None = None
     assistance_response: str | None = None
+    last_run_id: str | None = None
+    last_history_path: Path | None = None
+    last_gif_path: Path | None = None
 
 
 sessions: dict[str, LocalSession] = {}
@@ -145,6 +153,7 @@ def default_browser_settings() -> BrowserSettings:
         saveRecordingPath="",
         tracePath="",
         saveDownloadPath="./tmp/downloads",
+        saveAgentHistoryPath="./tmp/agent_history",
     )
 
 
@@ -227,6 +236,34 @@ def build_browser_session(settings: BrowserSettings) -> BrowserSession:
 def browser_settings_snapshot(settings: BrowserSettings | None = None) -> dict[str, Any]:
     selected = settings or default_browser_settings()
     return selected.model_dump(by_alias=True)
+
+
+def session_artifact_paths(session: LocalSession, run_id: str) -> tuple[Path, Path]:
+    root_value = session.browser_settings.save_agent_history_path.strip() or "./tmp/agent_history"
+    run_dir = Path(root_value).expanduser() / session.id / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir / f"{run_id}.json", run_dir / f"{run_id}.gif"
+
+
+def persist_agent_history(session: LocalSession, agent: Agent, history_path: Path, gif_path: Path) -> None:
+    """Use Browser Use's native save_history and generated GIF output."""
+    try:
+        agent.save_history(history_path)
+    except Exception:
+        # History is useful but should not turn a completed browsing task into an error.
+        session.last_history_path = None
+    else:
+        session.last_history_path = history_path if history_path.exists() else None
+
+    session.last_gif_path = gif_path if gif_path.exists() else None
+
+
+def artifact_state(session: LocalSession) -> dict[str, Any]:
+    return {
+        "artifactRunId": session.last_run_id,
+        "historyAvailable": bool(session.last_history_path and session.last_history_path.exists()),
+        "gifAvailable": bool(session.last_gif_path and session.last_gif_path.exists()),
+    }
 
 
 def message(role: str, data: dict[str, Any], message_id: str | None = None) -> dict[str, Any]:
@@ -395,6 +432,8 @@ async def create_session(body: CreateSessionRequest):
         "liveUrl": live_browser_url(),
         "status": "created",
         "browserSettings": browser_settings_snapshot(selected_settings),
+        "historyAvailable": False,
+        "gifAvailable": False,
     }
 
 
@@ -421,6 +460,28 @@ async def session_screenshot(session_id: str):
     )
 
 
+@app.get("/sessions/{session_id}/history")
+async def session_history(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    path = session.last_history_path
+    if not path or not path.exists():
+        raise HTTPException(status_code=404, detail="No saved agent history is available for this session yet")
+    return FileResponse(path, media_type="application/json", filename=path.name)
+
+
+@app.get("/sessions/{session_id}/gif")
+async def session_gif(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    path = session.last_gif_path
+    if not path or not path.exists():
+        raise HTTPException(status_code=404, detail="No generated GIF is available for this session yet")
+    return FileResponse(path, media_type="image/gif", filename=path.name)
+
+
 @app.post("/sessions/{session_id}/run")
 async def run_session(session_id: str, body: RunRequest):
     session = sessions.get(session_id)
@@ -433,6 +494,10 @@ async def run_session(session_id: str, body: RunRequest):
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         loop = asyncio.get_running_loop()
         session.status = "running"
+        session.last_run_id = str(uuid.uuid4())
+        session.last_history_path = None
+        session.last_gif_path = None
+        history_path, gif_path = session_artifact_paths(session, session.last_run_id)
 
         await queue.put(message("user", {"content": body.task}))
 
@@ -467,6 +532,7 @@ async def run_session(session_id: str, body: RunRequest):
                 )
 
         async def runner():
+            agent: Agent | None = None
             try:
                 llm = build_llm(session.model_spec)
                 tools = build_session_tools(session, emit)
@@ -478,33 +544,46 @@ async def run_session(session_id: str, body: RunRequest):
                     register_new_step_callback=on_step,
                     use_vision=body.use_vision,
                     max_actions_per_step=body.max_actions_per_step,
+                    generate_gif=str(gif_path) if body.generate_gif else False,
+                    enable_planning=body.enable_planning,
+                    planning_replan_on_stall=body.planning_replan_on_stall,
+                    planning_exploration_limit=body.planning_exploration_limit,
                 )
                 session.agent = agent
                 history = await agent.run(max_steps=body.max_steps)
+                persist_agent_history(session, agent, history_path, gif_path)
+
                 final = history.final_result() or "Task completed."
                 await queue.put(message("assistant", {"content": str(final)}))
-                session.status = "idle"
+                if session.status != "stopped":
+                    session.status = "idle"
                 await queue.put(
                     {
                         "__done": True,
                         "id": session.id,
                         "liveUrl": live_browser_url(),
-                        "status": "idle",
+                        "status": session.status,
+                        **artifact_state(session),
                     }
                 )
             except asyncio.CancelledError:
                 session.status = "stopped"
+                if agent is not None:
+                    persist_agent_history(session, agent, history_path, gif_path)
                 await queue.put(
                     {
                         "__done": True,
                         "id": session.id,
                         "liveUrl": live_browser_url(),
                         "status": "stopped",
+                        **artifact_state(session),
                     }
                 )
                 raise
             except Exception as exc:
                 session.status = "error"
+                if agent is not None:
+                    persist_agent_history(session, agent, history_path, gif_path)
                 await queue.put({"__error": True, "message": str(exc)})
                 await queue.put(
                     {
@@ -512,6 +591,7 @@ async def run_session(session_id: str, body: RunRequest):
                         "id": session.id,
                         "liveUrl": live_browser_url(),
                         "status": "error",
+                        **artifact_state(session),
                     }
                 )
             finally:
