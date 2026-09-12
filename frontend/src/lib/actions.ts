@@ -1,0 +1,29 @@
+"use server";
+
+import type { ModelPreset } from "./types";
+
+const API = process.env.LOCAL_AGENT_API ?? "http://127.0.0.1:8000";
+
+async function checked(res: Response) {
+  if (!res.ok) throw new Error(await res.text());
+  return res;
+}
+
+export async function createSession(opts: { model: string }) {
+  const res = await checked(await fetch(`${API}/sessions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: opts.model }), cache: "no-store" }));
+  return res.json() as Promise<{ id: string; liveUrl?: string | null; status: string }>;
+}
+
+export async function stopTask(id: string) {
+  await checked(await fetch(`${API}/sessions/${id}/stop`, { method: "POST", cache: "no-store" }));
+}
+
+export async function listModelPresets(): Promise<ModelPreset[]> {
+  try {
+    const res = await checked(await fetch(`${API}/models`, { cache: "no-store" }));
+    const data = await res.json();
+    return data.presets ?? [];
+  } catch {
+    return [];
+  }
+}
