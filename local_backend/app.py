@@ -34,7 +34,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.3.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -53,15 +53,18 @@ class BrowserSettings(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    browser_binary_path: str | None = Field(default=None, alias="browserBinaryPath")
-    browser_user_data_dir: str | None = Field(default=None, alias="browserUserDataDir")
+    browser_binary_path: str = Field(default="", alias="browserBinaryPath")
+    browser_user_data_dir: str = Field(default="", alias="browserUserDataDir")
     use_own_browser: bool = Field(default=False, alias="useOwnBrowser")
     keep_browser_open: bool = Field(default=True, alias="keepBrowserOpen")
     headless: bool = False
     disable_security: bool = Field(default=False, alias="disableSecurity")
-    cdp_url: str | None = Field(default=None, alias="cdpUrl")
+    cdp_url: str = Field(default="", alias="cdpUrl")
     window_width: int = Field(default=1920, ge=320, le=7680, alias="windowWidth")
     window_height: int = Field(default=1080, ge=240, le=4320, alias="windowHeight")
+    save_recording_path: str = Field(default="", alias="saveRecordingPath")
+    trace_path: str = Field(default="", alias="tracePath")
+    save_download_path: str = Field(default="./tmp/downloads", alias="saveDownloadPath")
 
 
 class CreateSessionRequest(BaseModel):
@@ -117,15 +120,18 @@ def env_optional(name: str) -> str | None:
 
 def default_browser_settings() -> BrowserSettings:
     return BrowserSettings(
-        browserBinaryPath=env_optional("BROWSER_PATH"),
-        browserUserDataDir=env_optional("BROWSER_USER_DATA"),
+        browserBinaryPath=env_optional("BROWSER_PATH") or "",
+        browserUserDataDir=env_optional("BROWSER_USER_DATA") or "",
         useOwnBrowser=env_bool("USE_OWN_BROWSER", False),
         keepBrowserOpen=env_bool("KEEP_BROWSER_OPEN", True),
         headless=env_bool("BROWSER_HEADLESS", False),
         disableSecurity=env_bool("DISABLE_SECURITY", False),
-        cdpUrl=env_optional("BROWSER_CDP"),
+        cdpUrl=env_optional("BROWSER_CDP") or "",
         windowWidth=env_int("RESOLUTION_WIDTH", 1920),
         windowHeight=env_int("RESOLUTION_HEIGHT", 1080),
+        saveRecordingPath="",
+        tracePath="",
+        saveDownloadPath="./tmp/downloads",
     )
 
 
@@ -167,8 +173,9 @@ def build_llm(spec: str):
 def build_browser_session(settings: BrowserSettings) -> BrowserSession:
     """Map Web UI settings onto Browser Use 0.13.10 BrowserProfile.
 
-    Browser Use owns launch, CDP, profile reuse and keep-alive behavior. This
-    function only translates UI setting names to native BrowserProfile fields.
+    Browser Use owns launch, CDP, profile reuse, recordings, traces, downloads
+    and keep-alive behavior. This function only translates UI setting names to
+    native BrowserProfile fields.
     """
 
     profile_kwargs: dict[str, Any] = {
@@ -179,9 +186,12 @@ def build_browser_session(settings: BrowserSettings) -> BrowserSession:
         "is_local": True,
     }
 
-    cdp_url = (settings.cdp_url or "").strip() or None
-    browser_path = (settings.browser_binary_path or "").strip() or None
-    user_data_dir = (settings.browser_user_data_dir or "").strip() or None
+    cdp_url = settings.cdp_url.strip() or None
+    browser_path = settings.browser_binary_path.strip() or None
+    user_data_dir = settings.browser_user_data_dir.strip() or None
+    recording_path = settings.save_recording_path.strip() or None
+    trace_path = settings.trace_path.strip() or None
+    download_path = settings.save_download_path.strip() or None
 
     if cdp_url:
         profile_kwargs["cdp_url"] = cdp_url
@@ -190,6 +200,13 @@ def build_browser_session(settings: BrowserSettings) -> BrowserSession:
             profile_kwargs["executable_path"] = browser_path
         if user_data_dir:
             profile_kwargs["user_data_dir"] = user_data_dir
+
+    if recording_path:
+        profile_kwargs["record_video_dir"] = recording_path
+    if trace_path:
+        profile_kwargs["traces_dir"] = trace_path
+    if download_path:
+        profile_kwargs["downloads_path"] = download_path
 
     return BrowserSession(browser_profile=BrowserProfile(**profile_kwargs))
 
