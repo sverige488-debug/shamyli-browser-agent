@@ -1,0 +1,95 @@
+name: Local Agent CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# The integration branch has an open PR, so PR synchronize events are the single
+# automatic source of truth. Avoid a second push-triggered run for the same SHA:
+# with cancel-in-progress that duplicate pair could cancel each other and leave
+# a misleading PR result. Manual workflow_dispatch remains available when needed.
+concurrency:
+  group: local-agent-ci-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+
+  backend-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r local_backend/requirements.txt
+      - run: python -m py_compile local_backend/app.py local_backend/browser_smoke.py local_backend/settings_contract_smoke.py local_backend/assistance_smoke.py local_backend/mcp_support.py local_backend/mcp_contract_smoke.py
+      - run: python -c "import sys; sys.path.insert(0, 'local_backend'); import app; print(app.app.title)"
+      - run: python local_backend/settings_contract_smoke.py
+      - run: python local_backend/assistance_smoke.py
+      - run: python local_backend/mcp_contract_smoke.py
+
+  docker-stack-smoke:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate local noVNC compose file
+        run: docker compose -f docker-compose.local-agent.yml config --quiet
+      - name: Build and start local adapter + noVNC stack
+        run: docker compose -f docker-compose.local-agent.yml up --build -d
+      - name: Verify API health and noVNC page
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:8000/health > /tmp/shamyli-health.json \
+              && curl -fsS http://127.0.0.1:6080/vnc.html > /dev/null; then
+              cat /tmp/shamyli-health.json
+              echo "SHAMYLI Docker/noVNC smoke: PASS"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Docker/noVNC stack did not become ready in time."
+          docker compose -f docker-compose.local-agent.yml ps
+          docker compose -f docker-compose.local-agent.yml logs --tail 200
+          exit 1
+      - name: Stop local stack
+        if: always()
+        run: docker compose -f docker-compose.local-agent.yml down -v
+
+  browser-smoke:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r local_backend/requirements.txt
+      - name: Install uv required by Browser Use installer
+        run: python -m pip install uv
+      - name: Install Browser Use Chromium
+        run: browser-use install
+      - name: Run real local-browser smoke test
+        run: python local_backend/browser_smoke.py
