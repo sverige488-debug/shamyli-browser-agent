@@ -19,6 +19,8 @@ interface SessionState {
   artifactRunId?: string | null;
   historyAvailable?: boolean;
   gifAvailable?: boolean;
+  mcpConnected?: string[];
+  mcpSkipped?: string[];
 }
 interface SessionContextType {
   sessionId: string;
@@ -76,6 +78,7 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
         planningExplorationLimit: agentSettings.planningExplorationLimit,
         overrideSystemPrompt: agentSettings.overrideSystemPrompt,
         extendSystemPrompt: agentSettings.extendSystemPrompt,
+        mcpServers: agentSettings.mcpServers,
       }),
     });
     if (!res.ok || !res.body) throw new Error(await res.text());
@@ -118,6 +121,7 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
     agentSettings.interactionMode,
     agentSettings.maxActionsPerStep,
     agentSettings.maxSteps,
+    agentSettings.mcpServers,
     agentSettings.overrideSystemPrompt,
     agentSettings.planningExplorationLimit,
     agentSettings.planningReplanOnStall,
