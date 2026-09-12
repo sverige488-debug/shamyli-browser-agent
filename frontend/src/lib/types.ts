@@ -13,6 +13,9 @@ export interface BrowserSettings {
   cdpUrl: string;
   windowWidth: number;
   windowHeight: number;
+  saveRecordingPath: string;
+  tracePath: string;
+  saveDownloadPath: string;
 }
 export interface UIMessage { id: string; role: "user" | "assistant"; content: string; toolCalls?: UIToolCall[]; createdAt: string; }
 export interface UIToolCall { id: string; name: string; displayName: string; displayValue: string; args: Record<string, unknown>; status: ToolStatus; result?: string; isError?: boolean; type: ToolCallType; }
