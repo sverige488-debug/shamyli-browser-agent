@@ -12,6 +12,18 @@ from browser_use.mcp.client import MCPClient
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _normalize_string_list(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = str(value).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+    return normalized
+
+
 class MCPServerSettings(BaseModel):
     """Non-secret configuration for one external stdio MCP server.
 
@@ -38,20 +50,12 @@ class MCPServerSettings(BaseModel):
     @field_validator("args", "tool_filter")
     @classmethod
     def normalize_string_list(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            item = str(value).strip()
-            if not item or item in seen:
-                continue
-            seen.add(item)
-            normalized.append(item)
-        return normalized
+        return _normalize_string_list(values)
 
     @field_validator("env_keys")
     @classmethod
     def normalize_env_keys(cls, values: list[str]) -> list[str]:
-        normalized = cls.normalize_string_list(values)
+        normalized = _normalize_string_list(values)
         invalid = [key for key in normalized if not _ENV_KEY_RE.fullmatch(key)]
         if invalid:
             raise ValueError(f"Invalid environment variable name: {invalid[0]}")
