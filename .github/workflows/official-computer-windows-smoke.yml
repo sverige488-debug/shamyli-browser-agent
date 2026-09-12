@@ -38,22 +38,13 @@ jobs:
       - name: Start cptr natively on Windows
         shell: pwsh
         run: |
-          $proc = Start-Process -FilePath "cptr" -ArgumentList @("run","--host","127.0.0.1","--port","8000","--headless") -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\cptr-out.log" -RedirectStandardError "$env:RUNNER_TEMP\cptr-err.log"
-          $proc.Id | Set-Content "$env:RUNNER_TEMP\cptr.pid"
+          Start-Process -FilePath "cptr" -ArgumentList @("run","--host","127.0.0.1","--port","8000","--headless") -RedirectStandardOutput "$env:RUNNER_TEMP\cptr-out.log" -RedirectStandardError "$env:RUNNER_TEMP\cptr-err.log"
 
       - name: Verify health exact version and frontend
         shell: pwsh
         run: |
           $ready = $false
-          for ($i = 0; $i -lt 90; $i++) {
-            if (Test-Path "$env:RUNNER_TEMP\cptr.pid") {
-              $pidValue = Get-Content "$env:RUNNER_TEMP\cptr.pid"
-              if (-not (Get-Process -Id $pidValue -ErrorAction SilentlyContinue)) {
-                Get-Content "$env:RUNNER_TEMP\cptr-out.log" -ErrorAction SilentlyContinue
-                Get-Content "$env:RUNNER_TEMP\cptr-err.log" -ErrorAction SilentlyContinue
-                throw "cptr process exited before becoming healthy"
-              }
-            }
+          for ($i = 0; $i -lt 60; $i++) {
             try {
               $health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/health" -TimeoutSec 2
               if ($health.status -eq "ok") { $ready = $true; break }
@@ -103,11 +94,10 @@ jobs:
           Get-Content "$env:RUNNER_TEMP\cptr-out.log" -ErrorAction SilentlyContinue
           Get-Content "$env:RUNNER_TEMP\cptr-err.log" -ErrorAction SilentlyContinue
 
-      - name: Stop cptr
+      - name: Stop cptr server
         if: always()
         shell: pwsh
         run: |
-          if (Test-Path "$env:RUNNER_TEMP\cptr.pid") {
-            $pidValue = Get-Content "$env:RUNNER_TEMP\cptr.pid"
-            Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+          Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+            Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
           }
