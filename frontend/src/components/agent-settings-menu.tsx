@@ -100,7 +100,7 @@ export function AgentSettingsMenu() {
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1 right-0 w-[320px] rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
+        <div className="absolute bottom-full mb-1 right-0 w-[350px] max-h-[560px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
           <div className="px-3 py-2 border-b border-zinc-800">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Agent settings</div>
             <p className="mt-1 text-[11px] leading-4 text-zinc-500">
@@ -110,9 +110,24 @@ export function AgentSettingsMenu() {
 
           <div className="p-3 space-y-3 border-b border-zinc-800">
             <Toggle label="Use Vision" checked={draft.useVision} onChange={(value) => patch({ useVision: value })} />
+            <Toggle label="Generate GIF" checked={draft.generateGif} onChange={(value) => patch({ generateGif: value })} />
             <div className="grid grid-cols-2 gap-2">
               <NumberField label="Max Steps" value={draft.maxSteps} min={1} max={100} onChange={(value) => patch({ maxSteps: value })} />
               <NumberField label="Actions / Step" value={draft.maxActionsPerStep} min={1} max={20} onChange={(value) => patch({ maxActionsPerStep: value })} />
+            </div>
+          </div>
+
+          <div className="p-3 space-y-3 border-b border-zinc-800">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Planning</div>
+              <p className="mt-1 text-[11px] leading-4 text-zinc-600">
+                Uses Browser Use 0.13.10 built-in planning. The old separate planner-LLM API is not copied.
+              </p>
+            </div>
+            <Toggle label="Enable Planning" checked={draft.enablePlanning} onChange={(value) => patch({ enablePlanning: value })} />
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label="Replan on Stall" value={draft.planningReplanOnStall} min={1} max={20} onChange={(value) => patch({ planningReplanOnStall: value })} />
+              <NumberField label="Exploration Limit" value={draft.planningExplorationLimit} min={1} max={50} onChange={(value) => patch({ planningExplorationLimit: value })} />
             </div>
           </div>
 
