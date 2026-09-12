@@ -14,6 +14,14 @@ export async function createSession(opts: { model: string }) {
   return res.json() as Promise<{ id: string; liveUrl?: string | null; status: string }>;
 }
 
+export async function pauseTask(id: string) {
+  await checked(await fetch(`${API}/sessions/${id}/pause`, { method: "POST", cache: "no-store" }));
+}
+
+export async function resumeTask(id: string) {
+  await checked(await fetch(`${API}/sessions/${id}/resume`, { method: "POST", cache: "no-store" }));
+}
+
 export async function stopTask(id: string) {
   await checked(await fetch(`${API}/sessions/${id}/stop`, { method: "POST", cache: "no-store" }));
 }
