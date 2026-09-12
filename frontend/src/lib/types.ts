@@ -3,6 +3,11 @@ export interface ParsedMessageData { content?: string | ContentPart[] | null; to
 export interface ContentPart { type: "text" | "image_url"; text?: string; image_url?: { url: string }; }
 export interface OpenAIToolCall { id: string; type: "function"; function: { name: string; arguments: string }; }
 export interface ModelPreset { value: string; label: string; }
+export interface LLMSettings {
+  temperature: number;
+  baseUrl: string;
+  ollamaNumCtx: number;
+}
 export interface BrowserSettings {
   browserBinaryPath: string;
   browserUserDataDir: string;
