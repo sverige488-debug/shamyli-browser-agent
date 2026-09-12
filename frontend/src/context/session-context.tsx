@@ -66,6 +66,7 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         task,
+        interactionMode: agentSettings.interactionMode,
         maxSteps: agentSettings.maxSteps,
         maxActionsPerStep: agentSettings.maxActionsPerStep,
         useVision: agentSettings.useVision,
@@ -114,6 +115,7 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
     agentSettings.enablePlanning,
     agentSettings.extendSystemPrompt,
     agentSettings.generateGif,
+    agentSettings.interactionMode,
     agentSettings.maxActionsPerStep,
     agentSettings.maxSteps,
     agentSettings.overrideSystemPrompt,
