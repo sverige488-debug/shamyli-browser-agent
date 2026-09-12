@@ -12,15 +12,10 @@ This file records implementation status only. `REUSE_FIRST_GAP_MAP.md` remains t
 - Browser Use core remains responsible for `Agent`, `BrowserSession`, `BrowserProfile`, browser actions, screenshots, provider classes, history serialization, GIF generation, and built-in planning.
 - Browser settings from the older Web UI are surfaced in the modern UI and translated to current Browser Use 0.13.10 fields: own browser, persistent profile, keep-alive, headless/security, CDP, window size, recording, trace, downloads, and agent-history path.
 - Native Agent settings are surfaced separately: Max Steps, Max Actions Per Step, Use Vision, Generate GIF, built-in Planning controls, Override System Prompt, and Extend System Prompt.
-- Legacy LLM controls are now ported through current Browser Use provider classes without recreating an LLM layer:
-  - provider/model selection plus custom `provider::model` values;
-  - Temperature;
-  - Base URL for OpenRouter/Groq/OpenAI/Anthropic and host mapping for Ollama;
-  - Ollama Context Length via current `ollama_options.num_ctx`;
-  - Google continues on its current native client because 0.13.10 does not expose the old generic `base_url` field there.
-- A stale legacy incompatibility was corrected: current `ChatOllama` does not accept the old direct `num_ctx` constructor argument; the integration now uses native `ollama_options` instead.
+- Legacy LLM controls are ported through current Browser Use provider classes without recreating an LLM layer: provider/model, Temperature, supported Base URL fields, Ollama host, and Ollama Context Length through current `ollama_options`.
+- A stale legacy incompatibility was corrected: current `ChatOllama` does not accept the old direct `num_ctx` constructor argument; the integration uses native `ollama_options` instead.
 - API keys are intentionally **not** persisted in the browser UI. Provider secrets remain in local environment variables / `.env`; the old password textbox is not copied into localStorage.
-- The old Web UI Load/Save Config workflow is restored in the modern UI as JSON import/export for model, LLM, browser, and agent settings. Secret API keys are excluded from the exported file.
+- The old Web UI Load/Save Config workflow is restored in the modern UI as JSON import/export for model, LLM, browser, and agent settings. Secret API keys are excluded from exported files.
 - Browser/LLM/agent settings are persisted locally and applied to new sessions/tasks.
 - Agent history uses native `Agent.save_history()` and the modern session UI exposes the latest JSON history when available.
 - GIF generation uses the native `generate_gif` option and the modern session UI exposes the generated GIF when available.
@@ -32,6 +27,18 @@ This file records implementation status only. `REUSE_FIRST_GAP_MAP.md` remains t
 - One-command Docker/noVNC Windows launcher: `scripts/start-docker-browser.ps1`; native Windows launcher remains `scripts/start-windows.ps1`.
 - Pause / Resume / Stop are wired through native Agent methods.
 
+## SHAMYLI safety boundary now added
+
+Upstream reuse has been exhausted for the required legacy capabilities, so the first intentionally SHAMYLI-specific layer is now present.
+
+- `Inspect Only` is the default interaction mode for new/local settings.
+- Inspect mode does **not** replace Browser Use browser actions. It creates the current native `Tools` registry with these interaction actions excluded: `click`, `input`, `upload_file`, `send_keys`, and `select_dropdown`.
+- The agent can still navigate directly to URLs, read/extract/search pages, scroll, screenshot, and use the existing human-assistance bridge.
+- A non-removable Inspect-mode policy is appended to the Agent system message so the model is told not to claim blocked interactions were performed and to ask the user when an interactive step is required.
+- `Full Browser Control` explicitly restores Browser Use's normal native interaction toolset for sessions where the user intentionally wants the agent to interact/change the active browser.
+- Imported older settings files that do not contain an interaction mode normalize safely to `Inspect Only`.
+- This is an action-level guard for the Browser Use interaction tools above, not a claim that every possible navigational GET request on every website is side-effect-free.
+
 ## Automated QA now covers
 
 - Next.js production build.
@@ -40,6 +47,8 @@ This file records implementation status only. `REUSE_FIRST_GAP_MAP.md` remains t
 - Native provider mapping checks, including OpenRouter/OpenAI temperature/base URL and Ollama host/context/temperature.
 - Explicit API-contract assertions for the pinned Browser Use Agent fields used by this integration.
 - Human-assistance registration/wait/resume contract through current Browser Use `Tools`.
+- Inspect-mode contract: all five blocked native interaction actions must be absent, `ask_for_assistant` must remain available, and Full Browser Control must restore the native actions.
+- `RunRequest` defaults to `interactionMode=inspect` even if a caller omits the UI setting.
 - Docker Compose validation and real adapter + Xvfb/x11vnc/noVNC startup smoke.
 - API health plus noVNC page availability.
 - Real Browser Use Chromium smoke tests on Ubuntu and Windows.
@@ -57,15 +66,15 @@ The legacy Web UI targets an older Browser Use generation. Current local runtime
 - Old generic Google `base_url` does not map to a current `ChatGoogle` field and is intentionally ignored for Google.
 - No native MCP package/API was found in the pinned 0.13.10 Browser Use tree during this audit. The old custom MCP client remains excluded until a supported native path is verified.
 
-## Next reuse-first work
+## CI / merge state
 
-1. Let the queued CI batch validate the provider-tuning/config-backup additions plus the existing browser/agent/human-assistance integration.
-2. Fix any CI failure before adding SHAMYLI-specific behavior.
-3. Keep unsupported legacy options out instead of maintaining parallel replacements.
-4. After upstream reuse is exhausted and CI is green, add SHAMYLI-specific safety modes and approval gates.
+- CI now uses Node 24 and branch-level concurrency so superseded push/PR jobs are cancelled instead of building an unbounded queue.
+- The newest full integration batch still needs a completed CI result before this Draft PR is treated as merge-ready.
+- Any CI failure should be fixed before expanding Full Browser Control behavior.
 
 ## Safety state
 
 - `main` remains untouched.
 - Pull request remains Draft.
 - No production WordPress write testing is part of this integration batch.
+- Default mode is now Inspect Only; Full Browser Control requires an explicit selection.
