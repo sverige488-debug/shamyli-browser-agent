@@ -26,6 +26,8 @@ export interface AgentSettings {
   enablePlanning: boolean;
   planningReplanOnStall: number;
   planningExplorationLimit: number;
+  overrideSystemPrompt: string;
+  extendSystemPrompt: string;
 }
 export interface UIMessage { id: string; role: "user" | "assistant"; content: string; toolCalls?: UIToolCall[]; createdAt: string; }
 export interface UIToolCall { id: string; name: string; displayName: string; displayValue: string; args: Record<string, unknown>; status: ToolStatus; result?: string; isError?: boolean; type: ToolCallType; }
