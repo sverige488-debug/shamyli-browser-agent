@@ -35,7 +35,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.11.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.12.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -79,6 +79,9 @@ class BrowserSettings(BaseModel):
     cdp_url: str = Field(default="", alias="cdpUrl")
     window_width: int = Field(default=1920, ge=320, le=7680, alias="windowWidth")
     window_height: int = Field(default=1080, ge=240, le=4320, alias="windowHeight")
+    allowed_domains: list[str] = Field(default_factory=list, alias="allowedDomains", max_length=99)
+    prohibited_domains: list[str] = Field(default_factory=list, alias="prohibitedDomains", max_length=99)
+    block_ip_addresses: bool = Field(default=False, alias="blockIpAddresses")
     save_recording_path: str = Field(default="", alias="saveRecordingPath")
     trace_path: str = Field(default="", alias="tracePath")
     save_download_path: str = Field(default="./tmp/downloads", alias="saveDownloadPath")
@@ -175,6 +178,9 @@ def default_browser_settings() -> BrowserSettings:
         cdpUrl=env_optional("BROWSER_CDP") or "",
         windowWidth=env_int("RESOLUTION_WIDTH", 1920),
         windowHeight=env_int("RESOLUTION_HEIGHT", 1080),
+        allowedDomains=[],
+        prohibitedDomains=[],
+        blockIpAddresses=False,
         saveRecordingPath="",
         tracePath="",
         saveDownloadPath="./tmp/downloads",
@@ -235,6 +241,9 @@ def build_browser_session(settings: BrowserSettings) -> BrowserSession:
         "disable_security": settings.disable_security,
         "keep_alive": settings.keep_browser_open,
         "window_size": {"width": settings.window_width, "height": settings.window_height},
+        "allowed_domains": settings.allowed_domains or None,
+        "prohibited_domains": settings.prohibited_domains or None,
+        "block_ip_addresses": settings.block_ip_addresses,
         "is_local": True,
     }
 
@@ -418,6 +427,7 @@ async def health():
         "browserUseCloudRequired": False,
         "defaultInteractionMode": "inspect",
         "nativeMcpClientAvailable": True,
+        "nativeDomainPolicyAvailable": True,
         "mcpInspectPolicy": "disabled",
         "llmSettings": llm_settings_snapshot(),
         "browserSettings": browser_settings_snapshot(),
