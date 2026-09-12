@@ -8,10 +8,14 @@ import type { BrowserSettings } from "@/lib/types";
 function NumberField({
   label,
   value,
+  min,
+  max,
   onChange,
 }: {
   label: string;
   value: number;
+  min: number;
+  max: number;
   onChange: (value: number) => void;
 }) {
   return (
@@ -19,10 +23,34 @@ function NumberField({
       {label}
       <input
         type="number"
-        min={240}
-        max={7680}
+        min={min}
+        max={max}
         value={value}
         onChange={(event) => onChange(Number(event.target.value) || value)}
+        className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-zinc-500"
+      />
+    </label>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+      {label}
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
         className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-zinc-500"
       />
     </label>
@@ -96,7 +124,7 @@ export function BrowserSettingsMenu() {
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1 right-0 w-[360px] max-h-[520px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
+        <div className="absolute bottom-full mb-1 right-0 w-[380px] max-h-[560px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
           <div className="px-3 py-2 border-b border-zinc-800">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browser settings</div>
             <p className="mt-1 text-[11px] leading-4 text-zinc-500">
@@ -112,37 +140,53 @@ export function BrowserSettingsMenu() {
           </div>
 
           <div className="p-3 space-y-3 border-b border-zinc-800">
-            <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
-              Browser Binary Path
-              <input
-                value={draft.browserBinaryPath}
-                onChange={(event) => patch({ browserBinaryPath: event.target.value })}
-                placeholder="Leave empty to use Browser Use Chromium"
-                className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-zinc-500"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
-              Browser User Data Dir
-              <input
-                value={draft.browserUserDataDir}
-                onChange={(event) => patch({ browserUserDataDir: event.target.value })}
-                placeholder="Optional profile directory"
-                className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-zinc-500"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
-              CDP URL
-              <input
-                value={draft.cdpUrl}
-                onChange={(event) => patch({ cdpUrl: event.target.value })}
-                placeholder="e.g. http://127.0.0.1:9222"
-                className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-zinc-500"
-              />
-            </label>
+            <TextField
+              label="Browser Binary Path"
+              value={draft.browserBinaryPath}
+              onChange={(value) => patch({ browserBinaryPath: value })}
+              placeholder="Leave empty to use Browser Use Chromium"
+            />
+            <TextField
+              label="Browser User Data Dir"
+              value={draft.browserUserDataDir}
+              onChange={(value) => patch({ browserUserDataDir: value })}
+              placeholder="Optional profile directory"
+            />
+            <TextField
+              label="CDP URL"
+              value={draft.cdpUrl}
+              onChange={(value) => patch({ cdpUrl: value })}
+              placeholder="e.g. http://127.0.0.1:9222"
+            />
             <div className="grid grid-cols-2 gap-2">
-              <NumberField label="Window Width" value={draft.windowWidth} onChange={(value) => patch({ windowWidth: value })} />
-              <NumberField label="Window Height" value={draft.windowHeight} onChange={(value) => patch({ windowHeight: value })} />
+              <NumberField label="Window Width" min={320} max={7680} value={draft.windowWidth} onChange={(value) => patch({ windowWidth: value })} />
+              <NumberField label="Window Height" min={240} max={4320} value={draft.windowHeight} onChange={(value) => patch({ windowHeight: value })} />
             </div>
+          </div>
+
+          <div className="p-3 space-y-3 border-b border-zinc-800">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browser output paths</div>
+              <p className="mt-1 text-[11px] leading-4 text-zinc-600">Native Browser Use recording, trace, and download directories.</p>
+            </div>
+            <TextField
+              label="Recording Path"
+              value={draft.saveRecordingPath}
+              onChange={(value) => patch({ saveRecordingPath: value })}
+              placeholder="Optional — e.g. ./tmp/record_videos"
+            />
+            <TextField
+              label="Trace Path"
+              value={draft.tracePath}
+              onChange={(value) => patch({ tracePath: value })}
+              placeholder="Optional — e.g. ./tmp/traces"
+            />
+            <TextField
+              label="Download Path"
+              value={draft.saveDownloadPath}
+              onChange={(value) => patch({ saveDownloadPath: value })}
+              placeholder="e.g. ./tmp/downloads"
+            />
           </div>
 
           <div className="flex items-center justify-end gap-2 p-3">
