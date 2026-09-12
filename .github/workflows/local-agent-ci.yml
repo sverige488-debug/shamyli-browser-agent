@@ -8,6 +8,13 @@ on:
     branches:
       - main
 
+# Each branch needs only its newest integration result. This also collapses the
+# duplicate push + pull_request runs for the same PR head instead of building a
+# growing Actions queue after every small reuse-first commit.
+concurrency:
+  group: local-agent-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   frontend-build:
     runs-on: ubuntu-latest
@@ -18,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - run: npm install --no-audit --no-fund
       - run: npm run build
 
