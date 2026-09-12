@@ -19,6 +19,9 @@ def main() -> None:
         cdpUrl="http://127.0.0.1:9222",
         windowWidth=1440,
         windowHeight=900,
+        saveRecordingPath="./tmp/recordings",
+        tracePath="./tmp/traces",
+        saveDownloadPath="./tmp/downloads",
     )
 
     session = build_browser_session(settings)
@@ -31,12 +34,18 @@ def main() -> None:
     assert profile.window_size is not None
     assert profile.window_size.width == 1440
     assert profile.window_size.height == 900
+    assert str(profile.record_video_dir).replace("\\", "/").endswith("tmp/recordings")
+    assert str(profile.traces_dir).replace("\\", "/").endswith("tmp/traces")
+    assert str(profile.downloads_path).replace("\\", "/").endswith("tmp/downloads")
 
     api_shape = browser_settings_snapshot(settings)
     assert api_shape["keepBrowserOpen"] is True
     assert api_shape["cdpUrl"] == "http://127.0.0.1:9222"
     assert api_shape["windowWidth"] == 1440
     assert api_shape["windowHeight"] == 900
+    assert api_shape["saveRecordingPath"] == "./tmp/recordings"
+    assert api_shape["tracePath"] == "./tmp/traces"
+    assert api_shape["saveDownloadPath"] == "./tmp/downloads"
 
     print("SHAMYLI browser settings adapter smoke: PASS")
 
