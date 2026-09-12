@@ -33,11 +33,16 @@ const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   saveRecordingPath: "",
   tracePath: "",
   saveDownloadPath: "./tmp/downloads",
+  saveAgentHistoryPath: "./tmp/agent_history",
 };
 const FALLBACK_AGENT_SETTINGS: AgentSettings = {
   maxSteps: 25,
   maxActionsPerStep: 5,
   useVision: true,
+  generateGif: false,
+  enablePlanning: true,
+  planningReplanOnStall: 3,
+  planningExplorationLimit: 5,
 };
 
 function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): BrowserSettings {
@@ -54,16 +59,23 @@ function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): Browse
     saveRecordingPath: raw?.saveRecordingPath ?? "",
     tracePath: raw?.tracePath ?? "",
     saveDownloadPath: raw?.saveDownloadPath ?? FALLBACK_BROWSER_SETTINGS.saveDownloadPath,
+    saveAgentHistoryPath: raw?.saveAgentHistoryPath ?? FALLBACK_BROWSER_SETTINGS.saveAgentHistoryPath,
   };
 }
 
 function normalizeAgentSettings(raw?: Partial<AgentSettings> | null): AgentSettings {
   const maxSteps = Math.min(100, Math.max(1, Number(raw?.maxSteps) || FALLBACK_AGENT_SETTINGS.maxSteps));
   const maxActionsPerStep = Math.min(20, Math.max(1, Number(raw?.maxActionsPerStep) || FALLBACK_AGENT_SETTINGS.maxActionsPerStep));
+  const planningReplanOnStall = Math.min(20, Math.max(1, Number(raw?.planningReplanOnStall) || FALLBACK_AGENT_SETTINGS.planningReplanOnStall));
+  const planningExplorationLimit = Math.min(50, Math.max(1, Number(raw?.planningExplorationLimit) || FALLBACK_AGENT_SETTINGS.planningExplorationLimit));
   return {
     maxSteps,
     maxActionsPerStep,
     useVision: raw?.useVision ?? FALLBACK_AGENT_SETTINGS.useVision,
+    generateGif: raw?.generateGif ?? FALLBACK_AGENT_SETTINGS.generateGif,
+    enablePlanning: raw?.enablePlanning ?? FALLBACK_AGENT_SETTINGS.enablePlanning,
+    planningReplanOnStall,
+    planningExplorationLimit,
   };
 }
 
