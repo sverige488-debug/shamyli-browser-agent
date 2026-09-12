@@ -16,6 +16,7 @@ from app import (
     BrowserSettings,
     LLMSettings,
     LocalSession,
+    MCPServerSettings,
     RunRequest,
     browser_settings_snapshot,
     build_browser_session,
@@ -119,6 +120,14 @@ def main() -> None:
             assert action_name in full_action_names, f"Full-control mode is missing native action {action_name}"
         assert "ask_for_assistant" in full_action_names
 
+    mcp_server = MCPServerSettings(
+        name="filesystem",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "./tmp"],
+        envKeys=["SHAMYLI_MCP_TEST_TOKEN"],
+        toolFilter=["read_file"],
+        prefix="fs_",
+    )
     run = RunRequest(
         task="smoke",
         interactionMode="full",
@@ -131,9 +140,11 @@ def main() -> None:
         planningExplorationLimit=7,
         overrideSystemPrompt="override smoke",
         extendSystemPrompt="extend smoke",
+        mcpServers=[mcp_server.model_dump(by_alias=True)],
     )
     assert run.interaction_mode == "full"
     assert RunRequest(task="default safety").interaction_mode == "inspect"
+    assert RunRequest(task="default mcp").mcp_servers == []
     assert run.max_steps == 12
     assert run.max_actions_per_step == 3
     assert run.use_vision is False
@@ -143,6 +154,10 @@ def main() -> None:
     assert run.planning_exploration_limit == 7
     assert run.override_system_prompt == "override smoke"
     assert run.extend_system_prompt == "extend smoke"
+    assert len(run.mcp_servers) == 1
+    assert run.mcp_servers[0].name == "filesystem"
+    assert run.mcp_servers[0].env_keys == ["SHAMYLI_MCP_TEST_TOKEN"]
+    assert run.model_dump(by_alias=True)["mcpServers"][0]["toolFilter"] == ["read_file"]
 
     native_agent_params = signature(Agent.__init__).parameters
     for name in (
