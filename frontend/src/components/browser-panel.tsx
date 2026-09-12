@@ -11,6 +11,7 @@ interface BrowserPanelProps {
 }
 
 const LOCAL_API = process.env.NEXT_PUBLIC_LOCAL_AGENT_API ?? "http://127.0.0.1:8000";
+const LOCAL_NOVNC_URL = process.env.NEXT_PUBLIC_NOVNC_URL?.trim() || "";
 
 function extractCurrentUrl(turns: ConversationTurn[]): string {
   for (let i = turns.length - 1; i >= 0; i--) {
@@ -27,16 +28,17 @@ function extractCurrentUrl(turns: ConversationTurn[]): string {
 
 export function BrowserPanel({ sessionId, liveUrl, turns, isSessionEnded }: BrowserPanelProps) {
   const currentUrl = useMemo(() => extractCurrentUrl(turns), [turns]);
+  const effectiveLiveUrl = liveUrl || LOCAL_NOVNC_URL || null;
   const [frame, setFrame] = useState(0);
   const [hasLocalFrame, setHasLocalFrame] = useState(false);
 
-  // Browser Use Web UI already refreshes BrowserSession screenshots while an
-  // agent runs. This only adapts that same proven behavior to the React panel.
+  // Prefer the already-proven Browser Use Web UI noVNC path when configured.
+  // Screenshot polling remains only as a native BrowserSession fallback.
   useEffect(() => {
-    if (liveUrl || isSessionEnded) return;
+    if (effectiveLiveUrl || isSessionEnded) return;
     const timer = window.setInterval(() => setFrame((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [liveUrl, isSessionEnded]);
+  }, [effectiveLiveUrl, isSessionEnded]);
 
   const screenshotUrl = `${LOCAL_API}/sessions/${encodeURIComponent(sessionId)}/screenshot?t=${frame}`;
 
@@ -49,8 +51,13 @@ export function BrowserPanel({ sessionId, liveUrl, turns, isSessionEnded }: Brow
         <span className="text-[11px] text-zinc-500">{isSessionEnded ? "Session ended" : currentUrl || "Waiting…"}</span>
       </div>
       <div className="flex-1 bg-zinc-900 relative overflow-hidden">
-        {liveUrl ? (
-          <iframe src={liveUrl} className="w-full h-full border-0" allow="clipboard-read; clipboard-write" />
+        {effectiveLiveUrl ? (
+          <iframe
+            src={effectiveLiveUrl}
+            title="SHAMYLI live browser"
+            className="w-full h-full border-0"
+            allow="clipboard-read; clipboard-write"
+          />
         ) : (
           <>
             <img
