@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getBrowserDefaults, listModelPresets } from "@/lib/actions";
-import type { BrowserSettings, ModelPreset } from "@/lib/types";
+import type { AgentSettings, BrowserSettings, ModelPreset } from "@/lib/types";
 
 interface SettingsContextType {
   model: string;
@@ -11,12 +11,15 @@ interface SettingsContextType {
   presets: ModelPreset[];
   browserSettings: BrowserSettings;
   setBrowserSettings: (settings: BrowserSettings) => void;
+  agentSettings: AgentSettings;
+  setAgentSettings: (settings: AgentSettings) => void;
   isLoadingSettings: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType | null>(null);
 const DEFAULT_MODEL = "openrouter::anthropic/claude-sonnet-4-6";
 const BROWSER_SETTINGS_KEY = "shamyli-browser-settings";
+const AGENT_SETTINGS_KEY = "shamyli-agent-settings";
 const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   browserBinaryPath: "",
   browserUserDataDir: "",
@@ -30,6 +33,11 @@ const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   saveRecordingPath: "",
   tracePath: "",
   saveDownloadPath: "./tmp/downloads",
+};
+const FALLBACK_AGENT_SETTINGS: AgentSettings = {
+  maxSteps: 25,
+  maxActionsPerStep: 5,
+  useVision: true,
 };
 
 function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): BrowserSettings {
@@ -46,6 +54,16 @@ function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): Browse
     saveRecordingPath: raw?.saveRecordingPath ?? "",
     tracePath: raw?.tracePath ?? "",
     saveDownloadPath: raw?.saveDownloadPath ?? FALLBACK_BROWSER_SETTINGS.saveDownloadPath,
+  };
+}
+
+function normalizeAgentSettings(raw?: Partial<AgentSettings> | null): AgentSettings {
+  const maxSteps = Math.min(100, Math.max(1, Number(raw?.maxSteps) || FALLBACK_AGENT_SETTINGS.maxSteps));
+  const maxActionsPerStep = Math.min(20, Math.max(1, Number(raw?.maxActionsPerStep) || FALLBACK_AGENT_SETTINGS.maxActionsPerStep));
+  return {
+    maxSteps,
+    maxActionsPerStep,
+    useVision: raw?.useVision ?? FALLBACK_AGENT_SETTINGS.useVision,
   };
 }
 
@@ -67,6 +85,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [model, setModel] = usePersisted("shamyli-local-model", DEFAULT_MODEL);
   const [browserSettings, setBrowserSettingsState] = useState<BrowserSettings>(FALLBACK_BROWSER_SETTINGS);
   const [browserHydrated, setBrowserHydrated] = useState(false);
+  const [agentSettings, setAgentSettingsState] = useState<AgentSettings>(FALLBACK_AGENT_SETTINGS);
 
   const { data: modelData, isLoading: isLoadingModels } = useQuery({
     queryKey: ["local-model-presets"],
@@ -78,6 +97,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     queryFn: getBrowserDefaults,
     staleTime: 60_000,
   });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(AGENT_SETTINGS_KEY);
+    if (!saved) return;
+    try {
+      setAgentSettingsState(normalizeAgentSettings(JSON.parse(saved) as Partial<AgentSettings>));
+    } catch {
+      localStorage.removeItem(AGENT_SETTINGS_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     if (browserHydrated) return;
@@ -108,12 +137,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(BROWSER_SETTINGS_KEY, JSON.stringify(normalized));
   }, []);
 
+  const setAgentSettings = useCallback((settings: AgentSettings) => {
+    const normalized = normalizeAgentSettings(settings);
+    setAgentSettingsState(normalized);
+    localStorage.setItem(AGENT_SETTINGS_KEY, JSON.stringify(normalized));
+  }, []);
+
   const presets = modelData?.length ? modelData : [{ value: DEFAULT_MODEL, label: "OpenRouter · Claude Sonnet 4.6" }];
   const isLoadingSettings = isLoadingModels || isLoadingBrowserDefaults || !browserHydrated;
 
   return (
     <SettingsContext.Provider
-      value={{ model, setModel, presets, browserSettings, setBrowserSettings, isLoadingSettings }}
+      value={{ model, setModel, presets, browserSettings, setBrowserSettings, agentSettings, setAgentSettings, isLoadingSettings }}
     >
       {children}
     </SettingsContext.Provider>
