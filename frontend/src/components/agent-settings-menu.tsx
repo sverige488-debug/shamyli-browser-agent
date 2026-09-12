@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, SlidersHorizontal } from "lucide-react";
+import { Check, ShieldCheck, SlidersHorizontal, Unlock } from "lucide-react";
 import { useSettings } from "@/context/settings-context";
-import type { AgentSettings } from "@/lib/types";
+import type { AgentSettings, InteractionMode } from "@/lib/types";
 
 function NumberField({
   label,
@@ -89,6 +89,38 @@ function Toggle({
   );
 }
 
+function InteractionModeButton({
+  mode,
+  selected,
+  title,
+  description,
+  onSelect,
+}: {
+  mode: InteractionMode;
+  selected: boolean;
+  title: string;
+  description: string;
+  onSelect: (mode: InteractionMode) => void;
+}) {
+  const Icon = mode === "inspect" ? ShieldCheck : Unlock;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(mode)}
+      className={`w-full rounded-lg border p-2.5 text-left transition-colors ${
+        selected ? "border-emerald-500/50 bg-emerald-500/10" : "border-zinc-700 bg-zinc-950 hover:bg-zinc-800"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-xs text-zinc-200">
+        <Icon size={14} className={selected ? "text-emerald-400" : "text-zinc-500"} />
+        <span className="font-medium">{title}</span>
+        {selected && <Check size={12} className="ml-auto text-emerald-400" />}
+      </div>
+      <p className="mt-1 text-[10px] leading-4 text-zinc-500">{description}</p>
+    </button>
+  );
+}
+
 export function AgentSettingsMenu() {
   const { agentSettings, setAgentSettings } = useSettings();
   const [open, setOpen] = useState(false);
@@ -118,19 +150,41 @@ export function AgentSettingsMenu() {
       <button
         type="button"
         onClick={() => (open ? setOpen(false) : show())}
-        title="Agent settings"
-        className="h-8 w-8 rounded-lg border border-transparent bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 transition-colors flex items-center justify-center"
+        title={`Agent settings · ${agentSettings.interactionMode === "inspect" ? "Inspect only" : "Full browser control"}`}
+        className={`h-8 w-8 rounded-lg border border-transparent transition-colors flex items-center justify-center ${
+          agentSettings.interactionMode === "inspect"
+            ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+            : "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20"
+        }`}
       >
         <SlidersHorizontal size={16} />
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1 right-0 w-[380px] max-h-[640px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
+        <div className="absolute bottom-full mb-1 right-0 w-[390px] max-h-[680px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
           <div className="px-3 py-2 border-b border-zinc-800">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Agent settings</div>
             <p className="mt-1 text-[11px] leading-4 text-zinc-500">
-              Native Browser Use Agent controls. Changes apply to the next task.
+              Browser Use controls plus a SHAMYLI safety boundary. Changes apply to the next task.
             </p>
+          </div>
+
+          <div className="p-3 space-y-2 border-b border-zinc-800">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500">Interaction mode</div>
+            <InteractionModeButton
+              mode="inspect"
+              selected={draft.interactionMode === "inspect"}
+              title="Inspect Only — default"
+              description="Blocks Browser Use click, typing, keyboard, dropdown, and upload actions. The agent can navigate, read, search, scroll, screenshot, and ask you for help."
+              onSelect={(interactionMode) => patch({ interactionMode })}
+            />
+            <InteractionModeButton
+              mode="full"
+              selected={draft.interactionMode === "full"}
+              title="Full Browser Control"
+              description="Enables Browser Use's normal interaction tools. Use only when you intentionally want the agent to make changes in the active browser session."
+              onSelect={(interactionMode) => patch({ interactionMode })}
+            />
           </div>
 
           <div className="p-3 space-y-3 border-b border-zinc-800">
