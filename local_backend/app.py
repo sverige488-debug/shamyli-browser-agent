@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,8 +28,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
     allow_credentials=False,
-    allow_methods=["*"] ,
-    allow_headers=["*"] ,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -170,9 +169,15 @@ async def run_session(session_id: str, body: RunRequest):
 
     async def event_stream():
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
         session.status = "running"
 
         await queue.put(message("user", {"content": body.task}))
+
+        def emit(item: dict[str, Any] | None) -> None:
+            # Browser Use callbacks may be invoked outside the request coroutine.
+            # Marshal queue writes back onto the FastAPI event loop safely.
+            loop.call_soon_threadsafe(queue.put_nowait, item)
 
         def on_step(state: Any, output: Any, step: int):
             tool_calls = action_to_tool_calls(output, step)
@@ -184,7 +189,7 @@ async def run_session(session_id: str, body: RunRequest):
                 thought = f"Step {step}"
 
             assistant_id = f"step-{step}-assistant"
-            queue.put_nowait(
+            emit(
                 message(
                     "assistant",
                     {"content": thought, "tool_calls": tool_calls},
@@ -192,7 +197,7 @@ async def run_session(session_id: str, body: RunRequest):
                 )
             )
             for call in tool_calls:
-                queue.put_nowait(
+                emit(
                     message(
                         "tool",
                         {"tool_call_id": call["id"], "content": "Completed"},
