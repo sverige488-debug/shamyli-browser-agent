@@ -1,0 +1,176 @@
+name: Official-only MCP smoke
+
+on:
+  push:
+    branches:
+      - shamyli/official-openwebui-mcp
+  workflow_dispatch:
+
+jobs:
+  browser-use-mcpo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install official uv runner
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+
+      - name: Verify pinned upstream CLIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --from "browser-use[cli]==0.13.10" browser-use --version
+          uvx --from "mcpo==0.0.20" mcpo --help > /tmp/mcpo-help.txt
+          grep -q -- "--config" /tmp/mcpo-help.txt
+
+      - name: Start Inspect bridge using only Browser Use + MCPO
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --from "mcpo==0.0.20" mcpo \
+            --host 127.0.0.1 \
+            --port 8000 \
+            --api-key shamyli-ci \
+            --config official-only/mcpo-inspect.json \
+            > /tmp/mcpo-inspect.log 2>&1 &
+          echo $! > /tmp/mcpo-inspect.pid
+
+          for attempt in {1..90}; do
+            if curl -fsS http://127.0.0.1:8000/browser_use/openapi.json > /tmp/inspect-openapi.json; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /tmp/mcpo-inspect.log
+          exit 1
+
+      - name: Verify Inspect OpenAPI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for tool in \
+            browser_navigate \
+            browser_get_state \
+            browser_extract_content \
+            browser_get_html \
+            browser_screenshot \
+            browser_scroll \
+            browser_go_back \
+            browser_list_tabs \
+            browser_switch_tab \
+            browser_list_sessions; do
+            jq -e --arg path "/$tool" '.paths[$path] != null' /tmp/inspect-openapi.json > /dev/null
+          done
+
+          for tool in \
+            browser_click \
+            browser_type \
+            browser_close_tab \
+            browser_close_session \
+            browser_close_all \
+            retry_with_browser_use_agent; do
+            if jq -e --arg path "/$tool" '.paths[$path] != null' /tmp/inspect-openapi.json > /dev/null; then
+              echo "Inspect profile unexpectedly exposes $tool"
+              exit 1
+            fi
+          done
+
+          curl -fsS \
+            -X POST \
+            -H 'Authorization: Bearer shamyli-ci' \
+            -H 'Content-Type: application/json' \
+            -d '{}' \
+            http://127.0.0.1:8000/browser_use/browser_list_sessions \
+            > /tmp/inspect-list-sessions.json
+
+          cat /tmp/inspect-list-sessions.json
+          echo "Official-only Inspect bridge: PASS"
+
+      - name: Stop Inspect bridge
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/mcpo-inspect.pid ]; then
+            kill "$(cat /tmp/mcpo-inspect.pid)" 2>/dev/null || true
+            sleep 2
+          fi
+
+      - name: Start Full bridge using only Browser Use + MCPO
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --from "mcpo==0.0.20" mcpo \
+            --host 127.0.0.1 \
+            --port 8001 \
+            --api-key shamyli-ci \
+            --config official-only/mcpo-full.json \
+            > /tmp/mcpo-full.log 2>&1 &
+          echo $! > /tmp/mcpo-full.pid
+
+          for attempt in {1..90}; do
+            if curl -fsS http://127.0.0.1:8001/browser_use/openapi.json > /tmp/full-openapi.json; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /tmp/mcpo-full.log
+          exit 1
+
+      - name: Verify Full OpenAPI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for tool in \
+            browser_navigate \
+            browser_click \
+            browser_type \
+            browser_get_state \
+            browser_extract_content \
+            browser_get_html \
+            browser_screenshot \
+            browser_scroll \
+            browser_go_back \
+            browser_list_tabs \
+            browser_switch_tab \
+            browser_close_tab \
+            retry_with_browser_use_agent \
+            browser_list_sessions \
+            browser_close_session \
+            browser_close_all; do
+            jq -e --arg path "/$tool" '.paths[$path] != null' /tmp/full-openapi.json > /dev/null
+          done
+
+          curl -fsS \
+            -X POST \
+            -H 'Authorization: Bearer shamyli-ci' \
+            -H 'Content-Type: application/json' \
+            -d '{}' \
+            http://127.0.0.1:8001/browser_use/browser_list_sessions \
+            > /tmp/full-list-sessions.json
+
+          cat /tmp/full-list-sessions.json
+          echo "Official-only Full bridge: PASS"
+
+      - name: Show logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo '--- Inspect MCPO log ---'
+          cat /tmp/mcpo-inspect.log 2>/dev/null || true
+          echo '--- Full MCPO log ---'
+          cat /tmp/mcpo-full.log 2>/dev/null || true
+
+      - name: Stop Full bridge
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/mcpo-full.pid ]; then
+            kill "$(cat /tmp/mcpo-full.pid)" 2>/dev/null || true
+          fi
