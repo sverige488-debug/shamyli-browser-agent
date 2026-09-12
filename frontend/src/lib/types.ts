@@ -23,7 +23,9 @@ export interface BrowserSettings {
   saveDownloadPath: string;
   saveAgentHistoryPath: string;
 }
+export type InteractionMode = "inspect" | "full";
 export interface AgentSettings {
+  interactionMode: InteractionMode;
   maxSteps: number;
   maxActionsPerStep: number;
   useVision: boolean;
