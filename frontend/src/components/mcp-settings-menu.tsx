@@ -5,8 +5,16 @@ import { Check, ChevronDown, ChevronUp, Plug, Plus, ShieldCheck, Trash2 } from "
 import { useSettings } from "@/context/settings-context";
 import type { MCPServerSettings } from "@/lib/types";
 
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 function lines(value: string): string[] {
   return [...new Set(value.split("\n").map((item) => item.trim()).filter(Boolean))];
+}
+
+function actionNamespace(server: MCPServerSettings): string {
+  const raw = (server.prefix.trim() || server.name.trim()).replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase() || "server";
+  const slug = raw.startsWith("mcp_") ? raw.slice(4) || "server" : raw;
+  return `mcp_${slug}_`;
 }
 
 function LineListField({
@@ -69,10 +77,19 @@ export function MCPSettingsMenu() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const invalid = useMemo(
-    () => draft.some((server) => !server.name.trim() || !server.command.trim()),
-    [draft],
-  );
+  const validationError = useMemo(() => {
+    if (draft.some((server) => !server.name.trim() || !server.command.trim())) {
+      return "Every server needs a name and command.";
+    }
+    if (draft.some((server) => server.envKeys.some((key) => !ENV_KEY_RE.test(key)))) {
+      return "Environment entries must be variable names, not values.";
+    }
+    const enabledNamespaces = draft.filter((server) => server.enabled).map(actionNamespace);
+    if (enabledNamespaces.length !== new Set(enabledNamespaces).size) {
+      return "Enabled MCP servers need unique names / namespaces.";
+    }
+    return null;
+  }, [draft]);
   const enabledCount = agentSettings.mcpServers.filter((server) => server.enabled).length;
 
   function show() {
@@ -194,13 +211,14 @@ export function MCPSettingsMenu() {
                           />
                         </label>
                         <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
-                          Optional action prefix
+                          Namespace (optional)
                           <input
                             value={server.prefix}
                             onChange={(event) => patch(index, { prefix: event.target.value })}
-                            placeholder="fs_"
+                            placeholder="filesystem"
                             className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 outline-none focus:border-zinc-500"
                           />
+                          <span className="text-[10px] leading-4 text-zinc-600">Actions are always isolated under {actionNamespace(server)} to protect native Browser Use action names.</span>
                         </label>
                       </div>
 
@@ -219,6 +237,7 @@ export function MCPSettingsMenu() {
                         value={server.args}
                         onChange={(args) => patch(index, { args })}
                         placeholder={"-y\n@modelcontextprotocol/server-filesystem\nC:\\allowed-folder"}
+                        hint="Do not place API keys or passwords in command arguments; use environment-variable names below."
                       />
 
                       <LineListField
@@ -257,8 +276,8 @@ export function MCPSettingsMenu() {
           </div>
 
           <div className="flex items-center justify-between gap-2 p-3 border-t border-zinc-800">
-            <span className={`text-[10px] ${invalid ? "text-red-400" : "text-zinc-600"}`}>
-              {invalid ? "Every server needs a name and command." : `${draft.length} configured`}
+            <span className={`text-[10px] ${validationError ? "text-red-400" : "text-zinc-600"}`}>
+              {validationError ?? `${draft.length} configured`}
             </span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setOpen(false)} className="h-8 px-3 rounded-md text-xs text-zinc-400 hover:bg-zinc-800">
@@ -266,7 +285,7 @@ export function MCPSettingsMenu() {
               </button>
               <button
                 type="button"
-                disabled={invalid}
+                disabled={Boolean(validationError)}
                 onClick={() => {
                   setAgentSettings({ ...agentSettings, mcpServers: draft });
                   setOpen(false);
