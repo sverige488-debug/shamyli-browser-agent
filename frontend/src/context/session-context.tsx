@@ -11,7 +11,15 @@ import { convertMessages, groupIntoTurns } from "@/lib/message-converter";
 import { useSettings } from "@/context/settings-context";
 import type { UIMessage, ConversationTurn, MessageResponse } from "@/lib/types";
 
-interface SessionState { id: string; liveUrl?: string | null; status: string; output?: unknown; }
+interface SessionState {
+  id: string;
+  liveUrl?: string | null;
+  status: string;
+  output?: unknown;
+  artifactRunId?: string | null;
+  historyAvailable?: boolean;
+  gifAvailable?: boolean;
+}
 interface SessionContextType {
   sessionId: string;
   session: SessionState | null;
@@ -52,7 +60,7 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
   const streamTask = useCallback(async (task: string) => {
     setIsLoading(false);
     setAssistanceRequest(null);
-    setSession((prev) => prev ? { ...prev, status: "running" } : prev);
+    setSession((prev) => prev ? { ...prev, status: "running", historyAvailable: false, gifAvailable: false } : prev);
     const res = await fetch(`/api/stream/${sessionId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -61,12 +69,17 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
         maxSteps: agentSettings.maxSteps,
         maxActionsPerStep: agentSettings.maxActionsPerStep,
         useVision: agentSettings.useVision,
+        generateGif: agentSettings.generateGif,
+        enablePlanning: agentSettings.enablePlanning,
+        planningReplanOnStall: agentSettings.planningReplanOnStall,
+        planningExplorationLimit: agentSettings.planningExplorationLimit,
       }),
     });
     if (!res.ok || !res.body) throw new Error(await res.text());
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let streamError: Error | null = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -87,14 +100,24 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
           setAssistanceRequest(null);
           setSession((prev) => prev ? { ...prev, status: typeof json.status === "string" ? json.status : "running" } : prev);
         } else if (json.__error) {
-          throw new Error(json.message ?? "Local agent error");
+          streamError = new Error(json.message ?? "Local agent error");
         } else {
           const msg = json as MessageResponse;
           setRawMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]);
         }
       }
     }
-  }, [agentSettings.maxActionsPerStep, agentSettings.maxSteps, agentSettings.useVision, sessionId]);
+    if (streamError) throw streamError;
+  }, [
+    agentSettings.enablePlanning,
+    agentSettings.generateGif,
+    agentSettings.maxActionsPerStep,
+    agentSettings.maxSteps,
+    agentSettings.planningExplorationLimit,
+    agentSettings.planningReplanOnStall,
+    agentSettings.useVision,
+    sessionId,
+  ]);
 
   const serverMessages = useMemo(() => convertMessages(rawMessages), [rawMessages]);
   const turns = useMemo(() => groupIntoTurns(serverMessages), [serverMessages]);
