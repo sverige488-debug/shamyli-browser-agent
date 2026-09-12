@@ -130,12 +130,14 @@ async def connect_mcp_servers(
                 args=server.args,
                 env=resolve_mcp_env(server.env_keys),
             )
+            # Track the client before registration so cleanup also covers a
+            # connect/registration failure after the subprocess has started.
+            connected.append(client)
             await client.register_to_tools(
                 tools,
                 tool_filter=server.tool_filter or None,
                 prefix=server.prefix or None,
             )
-            connected.append(client)
         return connected, []
     except Exception:
         await disconnect_mcp_clients(connected)
