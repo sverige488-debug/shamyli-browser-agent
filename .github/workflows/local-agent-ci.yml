@@ -35,12 +35,35 @@ jobs:
       - run: python -c "import sys; sys.path.insert(0, 'local_backend'); import app; print(app.app.title)"
       - run: python local_backend/settings_contract_smoke.py
 
-  docker-config:
+  docker-stack-smoke:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate local noVNC compose file
         run: docker compose -f docker-compose.local-agent.yml config --quiet
+      - name: Build and start local adapter + noVNC stack
+        run: docker compose -f docker-compose.local-agent.yml up --build -d
+      - name: Verify API health and noVNC page
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:8000/health > /tmp/shamyli-health.json \
+              && curl -fsS http://127.0.0.1:6080/vnc.html > /dev/null; then
+              cat /tmp/shamyli-health.json
+              echo "SHAMYLI Docker/noVNC smoke: PASS"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Docker/noVNC stack did not become ready in time."
+          docker compose -f docker-compose.local-agent.yml ps
+          docker compose -f docker-compose.local-agent.yml logs --tail 200
+          exit 1
+      - name: Stop local stack
+        if: always()
+        run: docker compose -f docker-compose.local-agent.yml down -v
 
   browser-smoke:
     timeout-minutes: 15
