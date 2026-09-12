@@ -18,6 +18,9 @@ export interface BrowserSettings {
   cdpUrl: string;
   windowWidth: number;
   windowHeight: number;
+  allowedDomains: string[];
+  prohibitedDomains: string[];
+  blockIpAddresses: boolean;
   saveRecordingPath: string;
   tracePath: string;
   saveDownloadPath: string;
