@@ -53,11 +53,12 @@ RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
 WORKDIR /app
 
 COPY local_backend/requirements.txt /app/local_backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/local_backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/local_backend/requirements.txt \
+    && pip install --no-cache-dir uv
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-browsers
-RUN mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" \
-    && python -m playwright install chromium
+# Use Browser Use's own tested installer instead of maintaining a parallel
+# Chromium installation path in SHAMYLI.
+RUN browser-use install
 
 COPY local_backend /app/local_backend
 COPY supervisord.local-agent.conf /etc/supervisor/conf.d/supervisord.conf
