@@ -1,0 +1,104 @@
+name: Official Computer smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'official-computer/**'
+      - '.cptr/**'
+      - '.github/workflows/official-computer-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: official-computer-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  cptr-browser-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull exact official browser-enabled release
+        run: docker pull ghcr.io/open-webui/computer:0.9.21-browser
+
+      - name: Prepare writable official data and workspace mounts
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cptr-data" "$RUNNER_TEMP/workspace"
+          cp -R "$GITHUB_WORKSPACE/.cptr" "$RUNNER_TEMP/workspace/.cptr"
+          # Upstream README explicitly requires a bind-mounted /data directory
+          # to be writable by the non-root container user.
+          chmod 0777 "$RUNNER_TEMP/cptr-data" "$RUNNER_TEMP/workspace"
+          chmod -R a+rX "$RUNNER_TEMP/workspace/.cptr"
+
+      - name: Start exact official Computer browser image
+        run: |
+          set -euo pipefail
+          docker run -d \
+            --name shamyli-cptr \
+            -p 8000:8000 \
+            -v "$RUNNER_TEMP/cptr-data:/data" \
+            -v "$RUNNER_TEMP/workspace:/workspace" \
+            -w /workspace \
+            ghcr.io/open-webui/computer:0.9.21-browser
+
+      - name: Verify official health, exact version and frontend
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in {1..90}; do
+            if ! docker inspect -f '{{.State.Running}}' shamyli-cptr 2>/dev/null | grep -q true; then
+              echo 'Official container stopped before becoming healthy.'
+              docker logs shamyli-cptr || true
+              exit 1
+            fi
+            if curl -fsS http://127.0.0.1:8000/api/health > /tmp/health.json; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+
+          jq -e '.status == "ok"' /tmp/health.json >/dev/null
+          curl -fsS http://127.0.0.1:8000/api/config > /tmp/config.json
+          jq -e '.version == "0.9.21"' /tmp/config.json >/dev/null
+          curl -fsS http://127.0.0.1:8000/ > /tmp/index.html
+          test -s /tmp/index.html
+
+          echo 'health:'
+          cat /tmp/health.json
+          echo
+          echo 'config:'
+          cat /tmp/config.json
+
+      - name: Verify browser-enabled image contains native Chromium
+        run: |
+          set -euo pipefail
+          docker exec shamyli-cptr python -c "from cptr.utils.browser.launcher import find_browser; b=find_browser(); print(b or ''); assert b, 'No Chrome-family browser found in official browser image'"
+
+      - name: Verify official browser approval metadata
+        run: |
+          set -euo pipefail
+          docker exec shamyli-cptr python -c "from cptr.utils.tools import BROWSER_TOOLS; assert BROWSER_TOOLS['browser_snapshot'].get('approval') == 'allow'; assert BROWSER_TOOLS['browser_screenshot'].get('approval') == 'allow'; assert 'approval' not in BROWSER_TOOLS['browser_click']; assert 'approval' not in BROWSER_TOOLS['browser_type']; print('browser approval metadata: PASS')"
+
+      - name: Verify native stdio MCP runtime is present
+        run: |
+          set -euo pipefail
+          docker exec shamyli-cptr python -c "import mcp; from cptr.utils.mcp.stdio_manager import stdio_manager; print(type(stdio_manager).__name__)"
+
+      - name: Verify SHAMYLI skill through cptr native discovery
+        run: |
+          set -euo pipefail
+          docker exec shamyli-cptr python -c "from cptr.utils.skills import discover_skills; skills=discover_skills('/workspace'); names=[s.name for s in skills]; print(names); assert 'shamyli-safe-web' in names"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs shamyli-cptr || true
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f shamyli-cptr 2>/dev/null || true
