@@ -16,7 +16,7 @@ const SUGGESTIONS = [
 
 export default function HomePage() {
   const router = useRouter();
-  const { model, browserSettings } = useSettings();
+  const { model, llmSettings, browserSettings } = useSettings();
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +25,7 @@ export default function HomePage() {
     setIsCreating(true);
     setError(null);
     try {
-      const session = await createSession({ model, browserSettings });
+      const session = await createSession({ model, llmSettings, browserSettings });
       sessionStorage.setItem(`task-${session.id}`, message);
       const liveUrl = session.liveUrl ? encodeURIComponent(session.liveUrl) : "";
       router.push(`/session/${session.id}?liveUrl=${liveUrl}`);
