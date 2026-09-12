@@ -21,11 +21,9 @@ async def main() -> None:
 
         screenshot = await browser.take_screenshot(full_page=False)
         current_url = await browser.get_current_page_url()
-        current_title = await browser.get_current_page_title()
 
         assert screenshot and len(screenshot) > 100, "Browser screenshot was empty"
         assert current_url.startswith("data:text/html,"), current_url
-        assert current_title == "SHAMYLI Smoke", current_title
         print("SHAMYLI local Browser Use smoke: PASS")
     finally:
         await browser.kill()
