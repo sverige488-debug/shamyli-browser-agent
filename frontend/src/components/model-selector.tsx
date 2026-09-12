@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Cpu, Laptop } from "lucide-react";
 import { AgentSettingsMenu } from "@/components/agent-settings-menu";
 import { BrowserSettingsMenu } from "@/components/browser-settings-menu";
+import { MCPSettingsMenu } from "@/components/mcp-settings-menu";
 import { SettingsBackupMenu } from "@/components/settings-backup-menu";
 import { useSettings } from "@/context/settings-context";
 import type { LLMSettings } from "@/lib/types";
@@ -48,6 +49,7 @@ export function SettingsBar() {
       </div>
       <BrowserSettingsMenu />
       <AgentSettingsMenu />
+      <MCPSettingsMenu />
       <SettingsBackupMenu />
       <div className="relative" ref={ref}>
         <button
