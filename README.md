@@ -1,151 +1,193 @@
-<img src="./assets/web-ui.png" alt="Browser Use Web UI" width="full"/>
+# SHAMYLI Browser Agent
 
-<br/>
+A local, reuse-first Browser Use workspace with a modern Next.js chat UI, a thin FastAPI adapter, native Browser Use automation, and the proven Browser Use Web UI noVNC stack for live browser observation.
 
-[![GitHub stars](https://img.shields.io/github/stars/browser-use/web-ui?style=social)](https://github.com/browser-use/web-ui/stargazers)
-[![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
-[![Documentation](https://img.shields.io/badge/Documentation-📕-blue)](https://docs.browser-use.com)
-[![WarmShao](https://img.shields.io/twitter/follow/warmshao?style=social)](https://x.com/warmshao)
+This integration intentionally reuses upstream components instead of rebuilding them:
 
-This project builds upon the foundation of the [browser-use](https://github.com/browser-use/browser-use), which is designed to make websites accessible for AI agents.
+- **Browser Use Chat UI Example** for the modern chat/session UX;
+- **Browser Use Web UI** for mature local browser settings and Xvfb/x11vnc/noVNC behavior;
+- **Browser Use 0.13.10 core** for `Agent`, `BrowserSession`, `BrowserProfile`, native LLM providers, planning, history, GIFs, browser actions, and MCP support.
 
-We would like to officially thank [WarmShao](https://github.com/warmshao) for his contribution to this project.
+Browser Use Cloud is **not required** for local execution.
 
-**WebUI:** is built on Gradio and supports most of `browser-use` functionalities. This UI is designed to be user-friendly and enables easy interaction with the browser agent.
+## Current safety model
 
-**Expanded LLM Support:** We've integrated support for various Large Language Models (LLMs), including: Google, OpenAI, Azure OpenAI, Anthropic, DeepSeek, Ollama etc. And we plan to add support for even more models in the future.
+`Inspect Only` is the default. It removes Browser Use's `click`, `input`, `upload_file`, `send_keys`, and `select_dropdown` actions from the run and also disables all external MCP tools. Reading, navigation, extraction/search, scrolling, screenshots, and human assistance remain available.
 
-**Custom Browser Support:** You can use your own browser with our tool, eliminating the need to re-login to sites or deal with other authentication challenges. This feature also supports high-definition screen recording.
+`Full Browser Control` is opt-in. It restores normal Browser Use interaction actions and allows explicitly configured external MCP servers.
 
-**Persistent Browser Sessions:** You can choose to keep the browser window open between AI tasks, allowing you to see the complete history and state of AI interactions.
+This is an action-level safety boundary, not a promise that every navigation request on every website is inherently side-effect-free.
 
-<video src="https://github.com/user-attachments/assets/56bc7080-f2e3-4367-af22-6bf2245ff6cb" controls="controls">Your browser does not support playing this video!</video>
+## Windows quick start
 
-## Installation Guide
+Requirements:
 
-### Option 1: Local Installation
+- Python 3.11+
+- Node.js (CI currently validates Node 24)
+- npm
+- optional Docker Desktop for the noVNC mode
 
-Read the [quickstart guide](https://docs.browser-use.com/quickstart#prepare-the-environment) or follow the steps below to get started.
+Clone this repository and switch to the integration branch:
 
-#### Step 1: Clone the Repository
-```bash
-git clone https://github.com/browser-use/web-ui.git
-cd web-ui
-```
-
-#### Step 2: Set Up Python Environment
-We recommend using [uv](https://docs.astral.sh/uv/) for managing the Python environment.
-
-Using uv (recommended):
-```bash
-uv venv --python 3.11
-```
-
-Activate the virtual environment:
-- Windows (Command Prompt):
-```cmd
-.venv\Scripts\activate
-```
-- Windows (PowerShell):
 ```powershell
-.\.venv\Scripts\Activate.ps1
-```
-- macOS/Linux:
-```bash
-source .venv/bin/activate
+git clone https://github.com/sverige488-debug/shamyli-browser-agent.git
+cd shamyli-browser-agent
+git checkout shamyli/chat-ui-local-base
 ```
 
-#### Step 3: Install Dependencies
-Install Python packages:
-```bash
-uv pip install -r requirements.txt
+Create your local environment file and add only the provider keys you actually use:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-Install Browsers in playwright. 
-```bash
-playwright install --with-deps
-```
-Or you can install specific browsers by running:
-```bash
-playwright install chromium --with-deps
+Run the one-time setup. It creates the Python venv, installs `browser-use==0.13.10`, uses Browser Use's own browser installer, and installs frontend dependencies:
+
+```powershell
+.\scripts\setup-windows.ps1
 ```
 
-#### Step 4: Configure Environment
-1. Create a copy of the example environment file:
-- Windows (Command Prompt):
-```bash
-copy .env.example .env
-```
-- macOS/Linux/Windows (PowerShell):
-```bash
-cp .env.example .env
-```
-2. Open `.env` in your preferred text editor and add your API keys and other settings
+### Option A — native Windows browser
 
-#### Step 5: Enjoy the web-ui
-1.  **Run the WebUI:**
-    ```bash
-    python webui.py --ip 127.0.0.1 --port 7788
-    ```
-2. **Access the WebUI:** Open your web browser and navigate to `http://127.0.0.1:7788`.
-3. **Using Your Own Browser(Optional):**
-    - Set `BROWSER_PATH` to the executable path of your browser and `BROWSER_USER_DATA` to the user data directory of your browser. Leave `BROWSER_USER_DATA` empty if you want to use local user data.
-      - Windows
-        ```env
-         BROWSER_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
-         BROWSER_USER_DATA="C:\Users\YourUsername\AppData\Local\Google\Chrome\User Data"
-        ```
-        > Note: Replace `YourUsername` with your actual Windows username for Windows systems.
-      - Mac
-        ```env
-         BROWSER_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-         BROWSER_USER_DATA="/Users/YourUsername/Library/Application Support/Google/Chrome"
-        ```
-    - Close all Chrome windows
-    - Open the WebUI in a non-Chrome browser, such as Firefox or Edge. This is important because the persistent browser context will use the Chrome data when running the agent.
-    - Check the "Use Own Browser" option within the Browser Settings.
-
-### Option 2: Docker Installation
-
-#### Prerequisites
-- Docker and Docker Compose installed
-  - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (For Windows/macOS)
-  - [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) (For Linux)
-
-#### Step 1: Clone the Repository
-```bash
-git clone https://github.com/browser-use/web-ui.git
-cd web-ui
+```powershell
+.\scripts\start-windows.ps1
 ```
 
-#### Step 2: Configure Environment
-1. Create a copy of the example environment file:
-- Windows (Command Prompt):
-```bash
-copy .env.example .env
-```
-- macOS/Linux/Windows (PowerShell):
-```bash
-cp .env.example .env
-```
-2. Open `.env` in your preferred text editor and add your API keys and other settings
+The launcher opens:
 
-#### Step 3: Docker Build and Run
-```bash
-docker compose up --build
-```
-For ARM64 systems (e.g., Apple Silicon Macs), please run follow command:
-```bash
-TARGETPLATFORM=linux/arm64 docker compose up --build
+- UI: `http://127.0.0.1:3000`
+- local API: `http://127.0.0.1:8000`
+
+The browser panel uses Browser Use screenshot fallback in this mode.
+
+### Option B — Docker + live noVNC browser
+
+With Docker Desktop running:
+
+```powershell
+.\scripts\start-docker-browser.ps1
 ```
 
-#### Step 4: Enjoy the web-ui and vnc
-- Web-UI: Open `http://localhost:7788` in your browser
-- VNC Viewer (for watching browser interactions): Open `http://localhost:6080/vnc.html`
-  - Default VNC password: "youvncpassword"
-  - Can be changed by setting `VNC_PASSWORD` in your `.env` file
+The launcher opens the same modern UI and starts the reused noVNC stack:
 
-## Changelog
-- [x] **2025/01/26:** Thanks to @vvincent1234. Now browser-use-webui can combine with DeepSeek-r1 to engage in deep thinking!
-- [x] **2025/01/10:** Thanks to @casistack. Now we have Docker Setup option and also Support keep browser open between tasks.[Video tutorial demo](https://github.com/browser-use/web-ui/issues/1#issuecomment-2582511750).
-- [x] **2025/01/06:** Thanks to @richard-devbot. A New and Well-Designed WebUI is released. [Video tutorial demo](https://github.com/warmshao/browser-use-webui/issues/1#issuecomment-2573393113).
+- UI: `http://127.0.0.1:3000`
+- local API: `http://127.0.0.1:8000`
+- noVNC: `http://127.0.0.1:6080`
+
+The default local VNC password is `shamyli-local` unless `VNC_PASSWORD` is set in `.env`.
+
+Stop the Docker backend with:
+
+```powershell
+docker compose -f docker-compose.local-agent.yml down
+```
+
+## LLM providers
+
+The modern UI uses Browser Use's native provider classes. Current presets cover:
+
+- OpenRouter
+- Groq
+- OpenAI
+- Anthropic
+- Google / Gemini
+- Ollama
+
+The model menu also accepts custom `provider::model-name` values for supported providers.
+
+Provider API keys stay in `.env` / process environment. They are not stored in browser localStorage or exported settings JSON.
+
+## Browser and Agent settings
+
+The modern settings bar exposes the currently mapped Browser Use controls without recreating their implementation:
+
+- own browser / browser binary / user-data directory;
+- keep browser open;
+- headless and security settings;
+- CDP URL;
+- browser dimensions;
+- recording, trace, download, and history paths;
+- max steps / actions per step;
+- vision and GIF generation;
+- built-in Browser Use planning;
+- system-prompt override / extension;
+- Inspect Only / Full Browser Control.
+
+Settings can be saved/loaded as JSON. Secret values are excluded.
+
+## Native MCP support
+
+Browser Use 0.13.10 already ships native MCP support. SHAMYLI therefore uses `browser_use.mcp.client.MCPClient` directly and does **not** port the fork's older `langchain_mcp_adapters` bridge.
+
+The MCP menu lets you configure an external stdio server with:
+
+- name;
+- command;
+- one argument per line;
+- enabled state;
+- optional action prefix;
+- optional tool allow-list;
+- environment-variable **names**.
+
+Do not enter secret values in the UI. Put secret values in the local environment and enter only their variable names in MCP settings. The backend constructs a least-privilege subprocess environment and does not automatically forward unrelated provider/backend secrets.
+
+External MCP servers are never started in `Inspect Only`. They are available only in `Full Browser Control`, are connected for the current run, and are disconnected during cleanup.
+
+Browser Use can also expose itself as an MCP server through its native `browser-use --mcp` mode. That interoperability mode is separate from the normal SHAMYLI chat runtime.
+
+### Docker note for MCP secrets
+
+Native Windows mode loads the repository `.env` file directly. Docker receives only variables explicitly mapped into `docker-compose.local-agent.yml`. If an external MCP server running inside Docker needs an additional secret, add that environment variable to the Docker service mapping and reference only its **name** in the MCP UI.
+
+## Human assistance
+
+When the agent reaches a blocker it cannot safely solve — for example credentials, a manual browser action, CAPTCHA, subjective judgment, or a capability blocked by Inspect Only — it can request help and wait. You can act in the live browser if needed, submit your response, and the same task resumes.
+
+## Artifacts
+
+Browser Use native features are reused for:
+
+- agent history JSON;
+- generated GIFs;
+- recordings;
+- traces;
+- downloads.
+
+Docker mode persists `./tmp` on the host.
+
+## Architecture
+
+```text
+Next.js UI :3000
+      |
+      v
+thin FastAPI adapter :8000
+      |
+      v
+Browser Use 0.13.10
+   |        |        |
+ browser   LLMs   native MCPClient
+   |
+ optional Xvfb + x11vnc + noVNC :6080
+```
+
+See `LOCAL_ARCHITECTURE.md`, `REUSE_FIRST_GAP_MAP.md`, `REUSE_MATRIX.md`, and `CURRENT_INTEGRATION_STATUS.md` for the implementation/audit details.
+
+## QA and merge policy
+
+The Draft integration PR is expected to pass:
+
+- Next.js production build;
+- backend syntax/import and adapter contracts;
+- provider/browser/Agent mapping checks;
+- Inspect-mode action exclusion;
+- human-assistance wait/resume behavior;
+- native MCP registration/safety/secret-isolation contracts;
+- Docker + Xvfb/x11vnc/noVNC startup smoke;
+- real Browser Use Chromium smoke tests on Ubuntu and Windows.
+
+Integration features stay on `shamyli/chat-ui-local-base` until the newest full CI matrix is green. Production WordPress write testing is not part of this integration batch.
+
+## Upstream attribution
+
+This project builds on Browser Use and its Web UI / Chat UI examples. Their upstream licenses and attribution files remain in the repository where applicable.
