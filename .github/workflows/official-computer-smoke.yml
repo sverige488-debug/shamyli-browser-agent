@@ -1,0 +1,86 @@
+name: Official Computer smoke
+
+on:
+  push:
+    branches:
+      - shamyli/official-computer
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'official-computer/**'
+      - '.cptr/**'
+      - '.github/workflows/official-computer-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: official-computer-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  cptr-browser-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull exact official browser-enabled release
+        run: docker pull ghcr.io/open-webui/computer:0.9.21-browser
+
+      - name: Start official Computer image
+        run: |
+          mkdir -p "$RUNNER_TEMP/cptr-data" "$RUNNER_TEMP/workspace"
+          docker run -d --rm \
+            --name shamyli-cptr \
+            -p 8000:8000 \
+            -v "$RUNNER_TEMP/cptr-data:/data" \
+            -v "$RUNNER_TEMP/workspace:/workspace" \
+            -w /workspace \
+            ghcr.io/open-webui/computer:0.9.21-browser
+
+      - name: Verify official health, version and frontend
+        run: |
+          set -euo pipefail
+          for attempt in {1..90}; do
+            if curl -fsS http://127.0.0.1:8000/api/health > /tmp/health.json; then
+              break
+            fi
+            sleep 2
+          done
+
+          jq -e '.status == "ok"' /tmp/health.json >/dev/null
+          curl -fsS http://127.0.0.1:8000/api/config > /tmp/config.json
+          jq -e '.version == "0.9.21"' /tmp/config.json >/dev/null
+          curl -fsS http://127.0.0.1:8000/ > /tmp/index.html
+          test -s /tmp/index.html
+
+          echo 'health:'
+          cat /tmp/health.json
+          echo
+          echo 'config:'
+          cat /tmp/config.json
+
+      - name: Verify browser-enabled image contains a Chrome-family browser
+        run: |
+          set -euo pipefail
+          docker exec shamyli-cptr python - <<'PY'
+          from cptr.utils.browser.launcher import find_browser
+          browser = find_browser()
+          print(browser or "")
+          if not browser:
+              raise SystemExit("No Chrome-family browser found in official browser image")
+          PY
+
+      - name: Verify SHAMYLI native skill is valid cptr skill content
+        run: |
+          test -s .cptr/skills/shamyli-safe-web/SKILL.md
+          grep -q '^name:' .cptr/skills/shamyli-safe-web/SKILL.md
+          grep -q '^description:' .cptr/skills/shamyli-safe-web/SKILL.md
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs shamyli-cptr || true
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f shamyli-cptr 2>/dev/null || true
