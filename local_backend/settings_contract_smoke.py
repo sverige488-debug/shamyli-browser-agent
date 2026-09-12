@@ -83,6 +83,8 @@ def main() -> None:
         enablePlanning=True,
         planningReplanOnStall=4,
         planningExplorationLimit=7,
+        overrideSystemPrompt="override smoke",
+        extendSystemPrompt="extend smoke",
     )
     assert run.max_steps == 12
     assert run.max_actions_per_step == 3
@@ -91,6 +93,8 @@ def main() -> None:
     assert run.enable_planning is True
     assert run.planning_replan_on_stall == 4
     assert run.planning_exploration_limit == 7
+    assert run.override_system_prompt == "override smoke"
+    assert run.extend_system_prompt == "extend smoke"
 
     native_agent_params = signature(Agent.__init__).parameters
     for name in (
@@ -100,6 +104,8 @@ def main() -> None:
         "enable_planning",
         "planning_replan_on_stall",
         "planning_exploration_limit",
+        "override_system_message",
+        "extend_system_message",
     ):
         assert name in native_agent_params, f"Browser Use Agent no longer exposes native parameter: {name}"
     assert hasattr(Agent, "save_history"), "Browser Use Agent.save_history() is no longer available"
