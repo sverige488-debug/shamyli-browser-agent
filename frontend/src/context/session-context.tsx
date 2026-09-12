@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from "react";
 import { pauseTask as pauseTaskAction, resumeTask as resumeTaskAction, stopTask as stopTaskAction } from "@/lib/actions";
 import { convertMessages, groupIntoTurns } from "@/lib/message-converter";
+import { useSettings } from "@/context/settings-context";
 import type { UIMessage, ConversationTurn, MessageResponse } from "@/lib/types";
 
 interface SessionState { id: string; liveUrl?: string | null; status: string; output?: unknown; }
@@ -26,6 +27,7 @@ const SessionContext = createContext<SessionContextType | null>(null);
 const TERMINAL = new Set(["stopped", "error", "timed_out"]);
 
 export function SessionProvider({ sessionId, initialLiveUrl, initialTask, children }: { sessionId: string; initialLiveUrl?: string; initialTask?: string; children: ReactNode }) {
+  const { agentSettings } = useSettings();
   const [rawMessages, setRawMessages] = useState<MessageResponse[]>([]);
   const [session, setSession] = useState<SessionState | null>(initialLiveUrl ? { id: sessionId, liveUrl: initialLiveUrl, status: "created" } : { id: sessionId, liveUrl: null, status: "created" });
   const [isSending, setIsSending] = useState(false);
@@ -38,7 +40,16 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
   const streamTask = useCallback(async (task: string) => {
     setIsLoading(false);
     setSession((prev) => prev ? { ...prev, status: "running" } : prev);
-    const res = await fetch(`/api/stream/${sessionId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task }) });
+    const res = await fetch(`/api/stream/${sessionId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task,
+        maxSteps: agentSettings.maxSteps,
+        maxActionsPerStep: agentSettings.maxActionsPerStep,
+        useVision: agentSettings.useVision,
+      }),
+    });
     if (!res.ok || !res.body) throw new Error(await res.text());
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -63,7 +74,7 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
         }
       }
     }
-  }, [sessionId]);
+  }, [agentSettings.maxActionsPerStep, agentSettings.maxSteps, agentSettings.useVision, sessionId]);
 
   const serverMessages = useMemo(() => convertMessages(rawMessages), [rawMessages]);
   const turns = useMemo(() => groupIntoTurns(serverMessages), [serverMessages]);
