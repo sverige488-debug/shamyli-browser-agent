@@ -31,5 +31,24 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: pip install -r local_backend/requirements.txt
-      - run: python -m py_compile local_backend/app.py
+      - run: python -m py_compile local_backend/app.py local_backend/browser_smoke.py
       - run: python -c "import sys; sys.path.insert(0, 'local_backend'); import app; print(app.app.title)"
+
+  browser-smoke:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r local_backend/requirements.txt
+      - name: Install Browser Use Chromium
+        run: browser-use install
+      - name: Run real local-browser smoke test
+        run: python local_backend/browser_smoke.py
