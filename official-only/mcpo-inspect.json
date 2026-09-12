@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "browser_use": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "browser-use[cli]==0.13.10",
+        "browser-use",
+        "--mcp"
+      ],
+      "disabledTools": [
+        "browser_click",
+        "browser_type",
+        "browser_close_tab",
+        "browser_close_session",
+        "browser_close_all",
+        "retry_with_browser_use_agent"
+      ]
+    }
+  }
+}
