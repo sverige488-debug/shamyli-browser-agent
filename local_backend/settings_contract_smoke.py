@@ -2,26 +2,56 @@
 
 This intentionally does not launch a browser. The real browser launch is already
 covered by browser_smoke.py on Windows and Ubuntu. Here we verify that modern UI
-contracts translate into Browser Use 0.13.10 native profile/agent fields.
+contracts translate into Browser Use 0.13.10 native profile/provider/agent fields.
 """
 
 import tempfile
 from inspect import signature
 from pathlib import Path
 
-from browser_use import Agent
+from browser_use import Agent, ChatOllama, ChatOpenAI, ChatOpenRouter
 
 from app import (
     BrowserSettings,
+    LLMSettings,
     LocalSession,
     RunRequest,
     browser_settings_snapshot,
     build_browser_session,
+    build_llm,
+    llm_settings_snapshot,
     session_artifact_paths,
 )
 
 
 def main() -> None:
+    llm_settings = LLMSettings(temperature=0.7, baseUrl="http://127.0.0.1:11434", ollamaNumCtx=24000)
+    llm_shape = llm_settings_snapshot(llm_settings)
+    assert llm_shape == {
+        "temperature": 0.7,
+        "baseUrl": "http://127.0.0.1:11434",
+        "ollamaNumCtx": 24000,
+    }
+
+    openrouter = build_llm("openrouter::anthropic/claude-sonnet-4-6", LLMSettings(temperature=0.4))
+    assert isinstance(openrouter, ChatOpenRouter)
+    assert openrouter.temperature == 0.4
+
+    openai = build_llm(
+        "openai::gpt-5",
+        LLMSettings(temperature=0.3, baseUrl="http://127.0.0.1:9999/v1"),
+    )
+    assert isinstance(openai, ChatOpenAI)
+    assert openai.temperature == 0.3
+    assert str(openai.base_url) == "http://127.0.0.1:9999/v1"
+
+    ollama = build_llm("ollama::qwen3", llm_settings)
+    assert isinstance(ollama, ChatOllama)
+    assert ollama.host == "http://127.0.0.1:11434"
+    assert ollama.ollama_options is not None
+    assert ollama.ollama_options["num_ctx"] == 24000
+    assert ollama.ollama_options["temperature"] == 0.7
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         settings = BrowserSettings(
             browserBinaryPath="",
@@ -67,6 +97,7 @@ def main() -> None:
             id="session-smoke",
             browser=browser_session,
             model_spec="ollama::smoke",
+            llm_settings=llm_settings,
             browser_settings=settings,
         )
         history_path, gif_path = session_artifact_paths(local_session, "run-smoke")
