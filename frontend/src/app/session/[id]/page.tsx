@@ -2,14 +2,30 @@
 
 import { useParams, useSearchParams } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
-import { Pause, Play } from "lucide-react";
+import { CircleHelp, Pause, Play, Square } from "lucide-react";
 import { SessionProvider, useSession } from "@/context/session-context";
 import { ChatInput } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { BrowserPanel } from "@/components/browser-panel";
 
 function SessionPage() {
-  const { sessionId, session, turns, isBusy, isPaused, isTerminal, isSending, sendMessage, pauseTask, resumeTask, stopTask } = useSession();
+  const {
+    sessionId,
+    session,
+    turns,
+    isBusy,
+    isPaused,
+    isTerminal,
+    isSending,
+    isAwaitingAssistance,
+    isSubmittingAssistance,
+    assistanceRequest,
+    sendMessage,
+    submitAssistance,
+    pauseTask,
+    resumeTask,
+    stopTask,
+  } = useSession();
   const chatRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -17,7 +33,7 @@ function SessionPage() {
     if (!el) return;
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
     if (isNearBottom) el.scrollTop = el.scrollHeight;
-  }, [turns]);
+  }, [turns, assistanceRequest]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
@@ -40,12 +56,44 @@ function SessionPage() {
             <ChatMessages turns={turns} isBusy={isBusy} />
           </div>
         </div>
+
+        {isAwaitingAssistance && assistanceRequest && !isTerminal && (
+          <div className="mx-4 mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <div className="flex items-start gap-3">
+              <CircleHelp size={18} className="mt-0.5 shrink-0 text-amber-300" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">Agent needs your help</div>
+                <p className="mt-1 whitespace-pre-wrap text-amber-100/80">{assistanceRequest}</p>
+                <p className="mt-2 text-xs text-amber-100/60">
+                  If needed, use the live browser on the right, then send your answer or confirmation below. The agent will continue automatically.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={stopTask}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300/20 px-2.5 text-xs text-amber-100 hover:bg-amber-400/10"
+                title="Stop task"
+              >
+                <Square size={12} /> Stop
+              </button>
+            </div>
+          </div>
+        )}
+
         <ChatInput
-          onSend={sendMessage}
-          isProcessing={isBusy || isSending}
+          onSend={isAwaitingAssistance ? submitAssistance : sendMessage}
+          isProcessing={isAwaitingAssistance ? isSubmittingAssistance : isBusy || isSending}
           onStop={stopTask}
           disabled={isTerminal}
-          placeholder={isTerminal ? "Session has ended" : isPaused ? "Agent is paused" : "Send a follow-up…"}
+          placeholder={
+            isTerminal
+              ? "Session has ended"
+              : isAwaitingAssistance
+                ? "Reply to the agent, or confirm after doing the required action…"
+                : isPaused
+                  ? "Agent is paused"
+                  : "Send a follow-up…"
+          }
         />
       </div>
 
