@@ -66,6 +66,9 @@ def main() -> None:
             cdpUrl="http://127.0.0.1:9222",
             windowWidth=1440,
             windowHeight=900,
+            allowedDomains=["shamyli.com", "*.shamyli.com"],
+            prohibitedDomains=["example.com"],
+            blockIpAddresses=True,
             saveRecordingPath="./tmp/recordings",
             tracePath="./tmp/traces",
             saveDownloadPath="./tmp/downloads",
@@ -82,6 +85,9 @@ def main() -> None:
         assert profile.window_size is not None
         assert profile.window_size.width == 1440
         assert profile.window_size.height == 900
+        assert profile.allowed_domains == ["shamyli.com", "*.shamyli.com"]
+        assert profile.prohibited_domains == ["example.com"]
+        assert profile.block_ip_addresses is True
         assert str(profile.record_video_dir).replace("\\", "/").endswith("tmp/recordings")
         assert str(profile.traces_dir).replace("\\", "/").endswith("tmp/traces")
         assert str(profile.downloads_path).replace("\\", "/").endswith("tmp/downloads")
@@ -91,6 +97,9 @@ def main() -> None:
         assert api_shape["cdpUrl"] == "http://127.0.0.1:9222"
         assert api_shape["windowWidth"] == 1440
         assert api_shape["windowHeight"] == 900
+        assert api_shape["allowedDomains"] == ["shamyli.com", "*.shamyli.com"]
+        assert api_shape["prohibitedDomains"] == ["example.com"]
+        assert api_shape["blockIpAddresses"] is True
         assert api_shape["saveRecordingPath"] == "./tmp/recordings"
         assert api_shape["tracePath"] == "./tmp/traces"
         assert api_shape["saveDownloadPath"] == "./tmp/downloads"
@@ -119,6 +128,11 @@ def main() -> None:
         for action_name in INSPECT_EXCLUDED_ACTIONS:
             assert action_name in full_action_names, f"Full-control mode is missing native action {action_name}"
         assert "ask_for_assistant" in full_action_names
+
+    default_browser = BrowserSettings()
+    assert default_browser.allowed_domains == []
+    assert default_browser.prohibited_domains == []
+    assert default_browser.block_ip_addresses is False
 
     mcp_server = MCPServerSettings(
         name="filesystem",
