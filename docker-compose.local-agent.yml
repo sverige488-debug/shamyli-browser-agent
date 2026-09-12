@@ -7,6 +7,9 @@ services:
       - "8000:8000"
       - "6080:6080"
       - "5901:5901"
+    volumes:
+      # Persist Browser Use downloads, recordings, traces, history, and generated GIFs on the host.
+      - ./tmp:/app/local_backend/tmp
     environment:
       # LLM providers used by Browser Use native provider classes.
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
