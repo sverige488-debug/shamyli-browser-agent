@@ -1,7 +1,12 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from "react";
-import { pauseTask as pauseTaskAction, resumeTask as resumeTaskAction, stopTask as stopTaskAction } from "@/lib/actions";
+import {
+  pauseTask as pauseTaskAction,
+  resumeTask as resumeTaskAction,
+  stopTask as stopTaskAction,
+  submitAssistance as submitAssistanceAction,
+} from "@/lib/actions";
 import { convertMessages, groupIntoTurns } from "@/lib/message-converter";
 import { useSettings } from "@/context/settings-context";
 import type { UIMessage, ConversationTurn, MessageResponse } from "@/lib/types";
@@ -17,7 +22,11 @@ interface SessionContextType {
   isPaused: boolean;
   isTerminal: boolean;
   isSending: boolean;
+  isAwaitingAssistance: boolean;
+  isSubmittingAssistance: boolean;
+  assistanceRequest: string | null;
   sendMessage: (task: string) => Promise<void>;
+  submitAssistance: (response: string) => Promise<void>;
   pauseTask: () => Promise<void>;
   resumeTask: () => Promise<void>;
   stopTask: () => Promise<void>;
@@ -32,13 +41,17 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
   const [session, setSession] = useState<SessionState | null>(initialLiveUrl ? { id: sessionId, liveUrl: initialLiveUrl, status: "created" } : { id: sessionId, liveUrl: null, status: "created" });
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(!!initialTask);
+  const [assistanceRequest, setAssistanceRequest] = useState<string | null>(null);
+  const [isSubmittingAssistance, setIsSubmittingAssistance] = useState(false);
   const sendingRef = useRef(false);
   const isTerminal = !!session && TERMINAL.has(session.status);
   const isPaused = session?.status === "paused";
+  const isAwaitingAssistance = session?.status === "waiting_for_user";
   const isBusy = session?.status === "running" || isPaused;
 
   const streamTask = useCallback(async (task: string) => {
     setIsLoading(false);
+    setAssistanceRequest(null);
     setSession((prev) => prev ? { ...prev, status: "running" } : prev);
     const res = await fetch(`/api/stream/${sessionId}`, {
       method: "POST",
@@ -65,7 +78,14 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
         const json = JSON.parse(line.slice(6));
         if (json.__done) {
           const { __done, ...result } = json;
+          setAssistanceRequest(null);
           setSession(result as SessionState);
+        } else if (json.__assistance) {
+          setAssistanceRequest(typeof json.question === "string" ? json.question : "The agent needs your help.");
+          setSession((prev) => prev ? { ...prev, status: "waiting_for_user" } : prev);
+        } else if (json.__assistance_resolved) {
+          setAssistanceRequest(null);
+          setSession((prev) => prev ? { ...prev, status: typeof json.status === "string" ? json.status : "running" } : prev);
         } else if (json.__error) {
           throw new Error(json.message ?? "Local agent error");
         } else {
@@ -84,9 +104,23 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
     sendingRef.current = true;
     setIsSending(true);
     try { await streamTask(task); }
-    catch (err) { console.error(err); setSession((prev) => prev ? { ...prev, status: "error" } : prev); }
+    catch (err) { console.error(err); setAssistanceRequest(null); setSession((prev) => prev ? { ...prev, status: "error" } : prev); }
     finally { sendingRef.current = false; setIsSending(false); }
   }, [streamTask]);
+
+  const submitAssistance = useCallback(async (response: string) => {
+    if (!isAwaitingAssistance || isSubmittingAssistance) return;
+    setIsSubmittingAssistance(true);
+    try {
+      await submitAssistanceAction(sessionId, response);
+      setAssistanceRequest(null);
+      setSession((prev) => prev ? { ...prev, status: "running" } : prev);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmittingAssistance(false);
+    }
+  }, [isAwaitingAssistance, isSubmittingAssistance, sessionId]);
 
   const initialTaskRef = useRef(initialTask);
   useEffect(() => {
@@ -108,10 +142,29 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
 
   const stopTask = useCallback(async () => {
     await stopTaskAction(sessionId);
+    setAssistanceRequest(null);
     setSession((prev) => prev ? { ...prev, status: "stopped" } : prev);
   }, [sessionId]);
 
-  return <SessionContext.Provider value={{ sessionId, session, messages: serverMessages, turns, isLoading, isBusy, isPaused, isTerminal, isSending, sendMessage, pauseTask, resumeTask, stopTask }}>{children}</SessionContext.Provider>;
+  return <SessionContext.Provider value={{
+    sessionId,
+    session,
+    messages: serverMessages,
+    turns,
+    isLoading,
+    isBusy,
+    isPaused,
+    isTerminal,
+    isSending,
+    isAwaitingAssistance,
+    isSubmittingAssistance,
+    assistanceRequest,
+    sendMessage,
+    submitAssistance,
+    pauseTask,
+    resumeTask,
+    stopTask,
+  }}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {
