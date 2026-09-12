@@ -3,6 +3,17 @@ export interface ParsedMessageData { content?: string | ContentPart[] | null; to
 export interface ContentPart { type: "text" | "image_url"; text?: string; image_url?: { url: string }; }
 export interface OpenAIToolCall { id: string; type: "function"; function: { name: string; arguments: string }; }
 export interface ModelPreset { value: string; label: string; }
+export interface BrowserSettings {
+  browserBinaryPath: string;
+  browserUserDataDir: string;
+  useOwnBrowser: boolean;
+  keepBrowserOpen: boolean;
+  headless: boolean;
+  disableSecurity: boolean;
+  cdpUrl: string;
+  windowWidth: number;
+  windowHeight: number;
+}
 export interface UIMessage { id: string; role: "user" | "assistant"; content: string; toolCalls?: UIToolCall[]; createdAt: string; }
 export interface UIToolCall { id: string; name: string; displayName: string; displayValue: string; args: Record<string, unknown>; status: ToolStatus; result?: string; isError?: boolean; type: ToolCallType; }
 export type ToolStatus = "pending" | "running" | "completed" | "error";
