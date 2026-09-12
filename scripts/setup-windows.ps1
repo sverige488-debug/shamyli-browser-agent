@@ -19,18 +19,30 @@ $PythonVersion = & python -c "import sys; print(f'{sys.version_info.major}.{sys.
 Write-Host "Python $PythonVersion"
 Write-Host "Node $(& node --version)"
 
-$VenvPython = Join-Path $Root "local_backend\.venv\Scripts\python.exe"
-$BrowserUseExe = Join-Path $Root "local_backend\.venv\Scripts\browser-use.exe"
+$VenvDir = Join-Path $Root "local_backend\.venv"
+$VenvScripts = Join-Path $VenvDir "Scripts"
+$VenvPython = Join-Path $VenvScripts "python.exe"
+$BrowserUseExe = Join-Path $VenvScripts "browser-use.exe"
 
 if (-not (Test-Path $VenvPython)) {
-    & python -m venv (Join-Path $Root "local_backend\.venv")
+    & python -m venv $VenvDir
 }
 
 & $VenvPython -m pip install --upgrade pip
 & $VenvPython -m pip install -r (Join-Path $Root "local_backend\requirements.txt")
 
-Write-Host "Installing Browser Use Chromium..." -ForegroundColor Cyan
-& $BrowserUseExe install
+# Browser Use's official `browser-use install` command invokes `uvx`.
+# Install uv into the same venv and expose that Scripts directory while the
+# official installer runs; do not replace Browser Use's installation logic.
+& $VenvPython -m pip install uv
+$OldPath = $env:PATH
+$env:PATH = "$VenvScripts;$env:PATH"
+try {
+    Write-Host "Installing Browser Use Chromium..." -ForegroundColor Cyan
+    & $BrowserUseExe install
+} finally {
+    $env:PATH = $OldPath
+}
 
 Push-Location (Join-Path $Root "frontend")
 try {
