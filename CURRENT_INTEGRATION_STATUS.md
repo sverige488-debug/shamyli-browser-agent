@@ -36,7 +36,10 @@ This file records implementation status only. `REUSE_FIRST_GAP_MAP.md` remains t
   - Enable Planning
   - Planning Replan on Stall
   - Planning Exploration Limit
+  - Override System Prompt -> native `override_system_message`
+  - Extend System Prompt -> native `extend_system_message`
 - Agent settings are persisted locally and sent with every task/follow-up; the adapter passes them directly to current `Agent` / `Agent.run()` parameters.
+- The older Web UI system-prompt controls are therefore preserved without copying the old agent implementation.
 - Every completed run gets a unique artifact directory under the configured Agent History path.
 - Agent history is saved with Browser Use's native `Agent.save_history()`; the modern session UI exposes the latest history JSON as a download when available.
 - GIF generation uses the current native `generate_gif` Agent option; the modern session UI exposes the latest GIF when enabled and successfully generated.
@@ -60,7 +63,7 @@ This file records implementation status only. `REUSE_FIRST_GAP_MAP.md` remains t
 - Next.js production build.
 - FastAPI adapter import / Python syntax.
 - Browser/agent settings adapter contract mapping into current BrowserProfile and RunRequest fields.
-- Explicit API-contract assertions that the pinned Browser Use Agent still exposes `save_history`, `generate_gif`, `enable_planning`, `planning_replan_on_stall`, `planning_exploration_limit`, `use_vision`, and `max_actions_per_step`.
+- Explicit API-contract assertions that the pinned Browser Use Agent still exposes `save_history`, `generate_gif`, `enable_planning`, `planning_replan_on_stall`, `planning_exploration_limit`, `use_vision`, `max_actions_per_step`, `override_system_message`, and `extend_system_message`.
 - Human-assistance registration/wait/resume contract through current Browser Use `Tools`.
 - Docker Compose configuration validation.
 - Real Docker build/start smoke for the local adapter + Xvfb/x11vnc/noVNC stack.
@@ -77,14 +80,14 @@ The legacy Web UI in this fork is based on an older Browser Use generation. Curr
 - Trace path: current native equivalent is `traces_dir` (`trace_path` alias) and is mapped.
 - Download path: current native equivalent is `downloads_path` (`save_downloads_path` alias) and is mapped.
 - Agent history: current `Agent.save_history()` exists and is now used directly.
-- `generate_gif`, `max_actions_per_step`, `use_vision`, and built-in planning controls exist on the current Agent and are mapped.
+- `generate_gif`, `max_actions_per_step`, `use_vision`, built-in planning controls, `override_system_message`, and `extend_system_message` exist on the current Agent and are mapped.
 - Legacy separate `planner_llm` / `use_vision_for_planner` constructor fields were not found on the current 0.13.10 Agent; the modern UI uses current built-in planning instead of recreating the removed planner wiring.
 - Legacy `max_input_tokens` and `tool_calling_method` were not found on the current 0.13.10 Agent constructor; do not copy the old implementation unchanged.
 - No native MCP package/API was found in the pinned 0.13.10 Browser Use tree during this audit. The old custom MCP client is intentionally not copied into the modern integration until a supported native path is verified.
 
 ## Next reuse-first work
 
-1. Let the new CI batch validate history/GIF/planning plus the existing human-assistance bridge on both frontend and backend.
+1. Let the new CI batch validate history/GIF/planning/system-prompts plus the existing human-assistance bridge on both frontend and backend.
 2. Review the remaining legacy settings against current 0.13.10 one by one; port only current native equivalents.
 3. Keep MCP out until a supported current Browser Use API is verified rather than maintaining an old parallel protocol.
 4. After upstream reuse is exhausted and CI is green, add SHAMYLI-specific safety modes and approval gates.
