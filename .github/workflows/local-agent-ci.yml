@@ -1,18 +1,17 @@
 name: Local Agent CI
 
 on:
-  push:
-    branches:
-      - shamyli/chat-ui-local-base
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
-# Each branch needs only its newest integration result. This also collapses the
-# duplicate push + pull_request runs for the same PR head instead of building a
-# growing Actions queue after every small reuse-first commit.
+# The integration branch has an open PR, so PR synchronize events are the single
+# automatic source of truth. Avoid a second push-triggered run for the same SHA:
+# with cancel-in-progress that duplicate pair could cancel each other and leave
+# a misleading PR result. Manual workflow_dispatch remains available when needed.
 concurrency:
-  group: local-agent-ci-${{ github.head_ref || github.ref_name }}
+  group: local-agent-ci-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
