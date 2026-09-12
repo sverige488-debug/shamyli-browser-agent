@@ -29,6 +29,20 @@ const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   windowHeight: 1080,
 };
 
+function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): BrowserSettings {
+  return {
+    browserBinaryPath: raw?.browserBinaryPath ?? "",
+    browserUserDataDir: raw?.browserUserDataDir ?? "",
+    useOwnBrowser: raw?.useOwnBrowser ?? FALLBACK_BROWSER_SETTINGS.useOwnBrowser,
+    keepBrowserOpen: raw?.keepBrowserOpen ?? FALLBACK_BROWSER_SETTINGS.keepBrowserOpen,
+    headless: raw?.headless ?? FALLBACK_BROWSER_SETTINGS.headless,
+    disableSecurity: raw?.disableSecurity ?? FALLBACK_BROWSER_SETTINGS.disableSecurity,
+    cdpUrl: raw?.cdpUrl ?? "",
+    windowWidth: raw?.windowWidth ?? FALLBACK_BROWSER_SETTINGS.windowWidth,
+    windowHeight: raw?.windowHeight ?? FALLBACK_BROWSER_SETTINGS.windowHeight,
+  };
+}
+
 function usePersisted(key: string, fallback: string) {
   const [value, setValue] = useState(fallback);
   useEffect(() => {
@@ -65,7 +79,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Partial<BrowserSettings>;
-        setBrowserSettingsState({ ...FALLBACK_BROWSER_SETTINGS, ...parsed });
+        setBrowserSettingsState(normalizeBrowserSettings(parsed));
         setBrowserHydrated(true);
         return;
       } catch {
@@ -74,7 +88,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
 
     if (browserDefaults) {
-      setBrowserSettingsState({ ...FALLBACK_BROWSER_SETTINGS, ...browserDefaults });
+      setBrowserSettingsState(normalizeBrowserSettings(browserDefaults));
       setBrowserHydrated(true);
       return;
     }
@@ -83,8 +97,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [browserDefaults, browserHydrated, isLoadingBrowserDefaults]);
 
   const setBrowserSettings = useCallback((settings: BrowserSettings) => {
-    setBrowserSettingsState(settings);
-    localStorage.setItem(BROWSER_SETTINGS_KEY, JSON.stringify(settings));
+    const normalized = normalizeBrowserSettings(settings);
+    setBrowserSettingsState(normalized);
+    localStorage.setItem(BROWSER_SETTINGS_KEY, JSON.stringify(normalized));
   }, []);
 
   const presets = modelData?.length ? modelData : [{ value: DEFAULT_MODEL, label: "OpenRouter · Claude Sonnet 4.6" }];
