@@ -1,0 +1,45 @@
+services:
+  shamyli-local-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.local-agent
+    ports:
+      - "8000:8000"
+      - "6080:6080"
+      - "5901:5901"
+    environment:
+      # LLM providers used by Browser Use native provider classes.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+
+      # Browser Use / SHAMYLI browser settings.
+      - DISPLAY=:99
+      - USE_OWN_BROWSER=${USE_OWN_BROWSER:-false}
+      - KEEP_BROWSER_OPEN=${KEEP_BROWSER_OPEN:-true}
+      - BROWSER_HEADLESS=${BROWSER_HEADLESS:-false}
+      - DISABLE_SECURITY=${DISABLE_SECURITY:-false}
+      - BROWSER_PATH=${BROWSER_PATH:-}
+      - BROWSER_USER_DATA=${BROWSER_USER_DATA:-}
+      - BROWSER_CDP=${BROWSER_CDP:-}
+      - RESOLUTION=${RESOLUTION:-1920x1080x24}
+      - RESOLUTION_WIDTH=${RESOLUTION_WIDTH:-1920}
+      - RESOLUTION_HEIGHT=${RESOLUTION_HEIGHT:-1080}
+
+      # Existing noVNC stack. Password is intentionally not placed in the browser URL.
+      - VNC_PASSWORD=${VNC_PASSWORD:-shamyli-local}
+
+      - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}
+      - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
+
+    shm_size: "2gb"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
