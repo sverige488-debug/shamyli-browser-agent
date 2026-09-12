@@ -36,7 +36,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.7.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.8.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -86,6 +86,8 @@ class RunRequest(BaseModel):
     enable_planning: bool = Field(default=True, alias="enablePlanning")
     planning_replan_on_stall: int = Field(default=3, ge=1, le=20, alias="planningReplanOnStall")
     planning_exploration_limit: int = Field(default=5, ge=1, le=50, alias="planningExplorationLimit")
+    override_system_prompt: str = Field(default="", max_length=100_000, alias="overrideSystemPrompt")
+    extend_system_prompt: str = Field(default="", max_length=100_000, alias="extendSystemPrompt")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -536,6 +538,8 @@ async def run_session(session_id: str, body: RunRequest):
             try:
                 llm = build_llm(session.model_spec)
                 tools = build_session_tools(session, emit)
+                override_system_message = body.override_system_prompt.strip() or None
+                extend_system_message = body.extend_system_prompt.strip() or None
                 agent = Agent(
                     task=body.task,
                     llm=llm,
@@ -548,6 +552,8 @@ async def run_session(session_id: str, body: RunRequest):
                     enable_planning=body.enable_planning,
                     planning_replan_on_stall=body.planning_replan_on_stall,
                     planning_exploration_limit=body.planning_exploration_limit,
+                    override_system_message=override_system_message,
+                    extend_system_message=extend_system_message,
                 )
                 session.agent = agent
                 history = await agent.run(max_steps=body.max_steps)
