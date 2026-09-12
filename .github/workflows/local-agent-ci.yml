@@ -22,11 +22,14 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run build
 
-  backend-syntax:
+  backend-runtime:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r local_backend/requirements.txt
       - run: python -m py_compile local_backend/app.py
+      - run: python -c "import sys; sys.path.insert(0, 'local_backend'); import app; print(app.app.title)"
