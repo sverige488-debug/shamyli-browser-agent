@@ -33,6 +33,31 @@ function NumberField({
   );
 }
 
+function PromptField({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+      {label}
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={3}
+        className="min-h-[72px] resize-y rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-200 outline-none focus:border-zinc-500"
+      />
+    </label>
+  );
+}
+
 function Toggle({
   label,
   checked,
@@ -100,7 +125,7 @@ export function AgentSettingsMenu() {
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1 right-0 w-[350px] max-h-[560px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
+        <div className="absolute bottom-full mb-1 right-0 w-[380px] max-h-[640px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
           <div className="px-3 py-2 border-b border-zinc-800">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Agent settings</div>
             <p className="mt-1 text-[11px] leading-4 text-zinc-500">
@@ -115,6 +140,27 @@ export function AgentSettingsMenu() {
               <NumberField label="Max Steps" value={draft.maxSteps} min={1} max={100} onChange={(value) => patch({ maxSteps: value })} />
               <NumberField label="Actions / Step" value={draft.maxActionsPerStep} min={1} max={20} onChange={(value) => patch({ maxActionsPerStep: value })} />
             </div>
+          </div>
+
+          <div className="p-3 space-y-3 border-b border-zinc-800">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">System prompt</div>
+              <p className="mt-1 text-[11px] leading-4 text-zinc-600">
+                Direct mapping of the old Web UI prompt controls to current Browser Use Agent fields.
+              </p>
+            </div>
+            <PromptField
+              label="Override System Prompt"
+              value={draft.overrideSystemPrompt}
+              onChange={(value) => patch({ overrideSystemPrompt: value })}
+              placeholder="Optional — replace Browser Use's normal system message"
+            />
+            <PromptField
+              label="Extend System Prompt"
+              value={draft.extendSystemPrompt}
+              onChange={(value) => patch({ extendSystemPrompt: value })}
+              placeholder="Optional — append SHAMYLI-specific instructions"
+            />
           </div>
 
           <div className="p-3 space-y-3 border-b border-zinc-800">
