@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getBrowserDefaults, listModelPresets } from "@/lib/actions";
-import type { AgentSettings, BrowserSettings, LLMSettings, ModelPreset } from "@/lib/types";
+import type { AgentSettings, BrowserSettings, LLMSettings, MCPServerSettings, ModelPreset } from "@/lib/types";
 
 interface SettingsContextType {
   model: string;
@@ -54,6 +54,7 @@ const FALLBACK_AGENT_SETTINGS: AgentSettings = {
   planningExplorationLimit: 5,
   overrideSystemPrompt: "",
   extendSystemPrompt: "",
+  mcpServers: [],
 };
 
 function normalizeLLMSettings(raw?: Partial<LLMSettings> | null): LLMSettings {
@@ -90,6 +91,43 @@ function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): Browse
   };
 }
 
+function normalizeStringList(raw: unknown, maxItems: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const item = value.trim();
+    if (!item || seen.has(item)) continue;
+    seen.add(item);
+    result.push(item);
+    if (result.length >= maxItems) break;
+  }
+  return result;
+}
+
+function normalizeMCPServers(raw: unknown): MCPServerSettings[] {
+  if (!Array.isArray(raw)) return [];
+  const result: MCPServerSettings[] = [];
+  for (const candidate of raw.slice(0, 16)) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const item = candidate as Partial<MCPServerSettings>;
+    const name = typeof item.name === "string" ? item.name.trim().slice(0, 128) : "";
+    const command = typeof item.command === "string" ? item.command.trim().slice(0, 2048) : "";
+    if (!name || !command) continue;
+    result.push({
+      name,
+      command,
+      args: normalizeStringList(item.args, 64),
+      envKeys: normalizeStringList(item.envKeys, 64),
+      toolFilter: normalizeStringList(item.toolFilter, 256),
+      prefix: typeof item.prefix === "string" ? item.prefix.trim().slice(0, 128) : "",
+      enabled: item.enabled !== false,
+    });
+  }
+  return result;
+}
+
 function normalizeAgentSettings(raw?: Partial<AgentSettings> | null): AgentSettings {
   const maxSteps = Math.min(100, Math.max(1, Number(raw?.maxSteps) || FALLBACK_AGENT_SETTINGS.maxSteps));
   const maxActionsPerStep = Math.min(20, Math.max(1, Number(raw?.maxActionsPerStep) || FALLBACK_AGENT_SETTINGS.maxActionsPerStep));
@@ -106,6 +144,7 @@ function normalizeAgentSettings(raw?: Partial<AgentSettings> | null): AgentSetti
     planningExplorationLimit,
     overrideSystemPrompt: raw?.overrideSystemPrompt ?? "",
     extendSystemPrompt: raw?.extendSystemPrompt ?? "",
+    mcpServers: normalizeMCPServers(raw?.mcpServers),
   };
 }
 
