@@ -38,6 +38,9 @@ const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   cdpUrl: "",
   windowWidth: 1920,
   windowHeight: 1080,
+  allowedDomains: [],
+  prohibitedDomains: [],
+  blockIpAddresses: false,
   saveRecordingPath: "",
   tracePath: "",
   saveDownloadPath: "./tmp/downloads",
@@ -56,6 +59,21 @@ const FALLBACK_AGENT_SETTINGS: AgentSettings = {
   extendSystemPrompt: "",
   mcpServers: [],
 };
+
+function normalizeStringList(raw: unknown, maxItems: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const item = value.trim();
+    if (!item || seen.has(item)) continue;
+    seen.add(item);
+    result.push(item);
+    if (result.length >= maxItems) break;
+  }
+  return result;
+}
 
 function normalizeLLMSettings(raw?: Partial<LLMSettings> | null): LLMSettings {
   const temperatureValue = Number(raw?.temperature);
@@ -84,26 +102,14 @@ function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): Browse
     cdpUrl: raw?.cdpUrl ?? "",
     windowWidth: raw?.windowWidth ?? FALLBACK_BROWSER_SETTINGS.windowWidth,
     windowHeight: raw?.windowHeight ?? FALLBACK_BROWSER_SETTINGS.windowHeight,
+    allowedDomains: normalizeStringList(raw?.allowedDomains, 99),
+    prohibitedDomains: normalizeStringList(raw?.prohibitedDomains, 99),
+    blockIpAddresses: raw?.blockIpAddresses ?? FALLBACK_BROWSER_SETTINGS.blockIpAddresses,
     saveRecordingPath: raw?.saveRecordingPath ?? "",
     tracePath: raw?.tracePath ?? "",
     saveDownloadPath: raw?.saveDownloadPath ?? FALLBACK_BROWSER_SETTINGS.saveDownloadPath,
     saveAgentHistoryPath: raw?.saveAgentHistoryPath ?? FALLBACK_BROWSER_SETTINGS.saveAgentHistoryPath,
   };
-}
-
-function normalizeStringList(raw: unknown, maxItems: number): string[] {
-  if (!Array.isArray(raw)) return [];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of raw) {
-    if (typeof value !== "string") continue;
-    const item = value.trim();
-    if (!item || seen.has(item)) continue;
-    seen.add(item);
-    result.push(item);
-    if (result.length >= maxItems) break;
-  }
-  return result;
 }
 
 function normalizeMCPServers(raw: unknown): MCPServerSettings[] {
