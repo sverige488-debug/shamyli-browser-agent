@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Cpu, Laptop } from "lucide-react";
+import { AgentSettingsMenu } from "@/components/agent-settings-menu";
 import { BrowserSettingsMenu } from "@/components/browser-settings-menu";
 import { useSettings } from "@/context/settings-context";
 
@@ -27,6 +28,7 @@ export function SettingsBar() {
         <Laptop size={13} /> Local
       </div>
       <BrowserSettingsMenu />
+      <AgentSettingsMenu />
       <div className="relative" ref={ref}>
         <button type="button" onClick={() => setOpen((v) => !v)} title={`Model: ${current?.label ?? model}`} className="h-8 w-8 rounded-lg border flex items-center justify-center bg-amber-500/10 text-amber-400 border-transparent hover:bg-amber-500/20 transition-colors">
           <Cpu size={16} />
