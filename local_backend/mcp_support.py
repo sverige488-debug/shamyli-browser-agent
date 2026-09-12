@@ -10,6 +10,7 @@ from browser_use import Tools
 from browser_use.mcp.client import MCPClient
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_NAMESPACE_RE = re.compile(r"[^A-Za-z0-9_]+")
 
 
 def _normalize_string_list(values: list[str]) -> list[str]:
@@ -22,6 +23,16 @@ def _normalize_string_list(values: list[str]) -> list[str]:
         seen.add(item)
         normalized.append(item)
     return normalized
+
+
+def mcp_action_prefix(server: "MCPServerSettings") -> str:
+    """Return a mandatory MCP namespace prefix that cannot shadow native actions."""
+
+    raw = server.prefix.strip() or server.name.strip()
+    slug = _NAMESPACE_RE.sub("_", raw).strip("_").lower() or "server"
+    if slug.startswith("mcp_"):
+        slug = slug[4:] or "server"
+    return f"mcp_{slug}_"
 
 
 class MCPServerSettings(BaseModel):
@@ -113,6 +124,10 @@ async def connect_mcp_servers(
     semantics are server-defined, so SHAMYLI cannot prove that an arbitrary MCP
     tool is read-only. Full Browser Control is therefore required before any MCP
     subprocess is started or any MCP action is registered.
+
+    Every external server is also forced into an ``mcp_<namespace>_`` action
+    prefix so a server cannot accidentally replace a native Browser Use action
+    in the shared registry.
     """
 
     enabled = [server for server in servers if server.enabled]
@@ -121,22 +136,25 @@ async def connect_mcp_servers(
     if interaction_mode == "inspect":
         return [], [server.name for server in enabled]
 
+    prepared = [(server, mcp_action_prefix(server)) for server in enabled]
+    prefixes = [prefix for _, prefix in prepared]
+    if len(prefixes) != len(set(prefixes)):
+        raise ValueError("Enabled MCP servers must use unique names/namespaces")
+
     connected: list[MCPClient] = []
     try:
-        for server in enabled:
+        for server, action_prefix in prepared:
             client = MCPClient(
                 server_name=server.name,
                 command=server.command,
                 args=server.args,
                 env=resolve_mcp_env(server.env_keys),
             )
-            # Track the client before registration so cleanup also covers a
-            # connect/registration failure after the subprocess has started.
             connected.append(client)
             await client.register_to_tools(
                 tools,
                 tool_filter=server.tool_filter or None,
-                prefix=server.prefix or None,
+                prefix=action_prefix,
             )
         return connected, []
     except Exception:
