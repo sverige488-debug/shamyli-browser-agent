@@ -8,6 +8,7 @@ actual production implementation.
 import asyncio
 import os
 
+from pydantic import ValidationError
 from browser_use import Tools
 from browser_use.mcp.client import MCPClient as NativeMCPClient
 
@@ -54,13 +55,25 @@ async def main() -> None:
     assert server.prefix == "demo_"
     assert server.model_dump(by_alias=True)["envKeys"] == ["SHAMYLI_MCP_TEST_TOKEN"]
 
+    try:
+        MCPServerSettings(name="bad", command="npx", envKeys=["BAD=VALUE"])
+        raise AssertionError("Invalid environment variable name was accepted")
+    except ValidationError:
+        pass
+
     os.environ["SHAMYLI_MCP_TEST_TOKEN"] = "local-secret-value"
     os.environ["SHAMYLI_MCP_UNRELATED_SECRET"] = "must-not-be-forwarded"
+    os.environ["OPENAI_API_KEY"] = "provider-key-must-not-leak"
     resolved = resolve_mcp_env(server.env_keys)
-    assert resolved is not None
     assert resolved["SHAMYLI_MCP_TEST_TOKEN"] == "local-secret-value"
     assert "SHAMYLI_MCP_UNRELATED_SECRET" not in resolved
-    assert resolve_mcp_env([]) is None
+    assert "OPENAI_API_KEY" not in resolved
+
+    least_privilege = resolve_mcp_env([])
+    assert isinstance(least_privilege, dict)
+    assert "SHAMYLI_MCP_TEST_TOKEN" not in least_privilege
+    assert "SHAMYLI_MCP_UNRELATED_SECRET" not in least_privilege
+    assert "OPENAI_API_KEY" not in least_privilege
 
     original_client = mcp_support.MCPClient
     mcp_support.MCPClient = FakeMCPClient  # type: ignore[assignment]
@@ -81,6 +94,7 @@ async def main() -> None:
         assert fake.args == ["@example/mcp"]
         assert fake.env is not None
         assert fake.env["SHAMYLI_MCP_TEST_TOKEN"] == "local-secret-value"
+        assert "OPENAI_API_KEY" not in fake.env
         assert fake.register_calls[0]["tool_filter"] == ["read_page"]
         assert fake.register_calls[0]["prefix"] == "demo_"
 
