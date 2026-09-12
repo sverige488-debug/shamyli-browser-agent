@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from browser_use import (
     Agent,
@@ -34,7 +34,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.2.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -44,8 +44,31 @@ app.add_middleware(
 )
 
 
+class BrowserSettings(BaseModel):
+    """Thin translation of Browser Use Web UI browser settings.
+
+    These values are passed straight into Browser Use's native BrowserProfile.
+    The adapter intentionally does not reimplement browser/session behavior.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    browser_binary_path: str | None = Field(default=None, alias="browserBinaryPath")
+    browser_user_data_dir: str | None = Field(default=None, alias="browserUserDataDir")
+    use_own_browser: bool = Field(default=False, alias="useOwnBrowser")
+    keep_browser_open: bool = Field(default=True, alias="keepBrowserOpen")
+    headless: bool = False
+    disable_security: bool = Field(default=False, alias="disableSecurity")
+    cdp_url: str | None = Field(default=None, alias="cdpUrl")
+    window_width: int = Field(default=1920, ge=320, le=7680, alias="windowWidth")
+    window_height: int = Field(default=1080, ge=240, le=4320, alias="windowHeight")
+
+
 class CreateSessionRequest(BaseModel):
     model: str = "openrouter::anthropic/claude-sonnet-4-6"
+    browser_settings: BrowserSettings | None = Field(default=None, alias="browserSettings")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class RunRequest(BaseModel):
@@ -58,6 +81,7 @@ class LocalSession:
     id: str
     browser: BrowserSession
     model_spec: str
+    browser_settings: BrowserSettings
     status: str = "created"
     agent: Agent | None = None
 
@@ -84,6 +108,31 @@ def env_int(name: str, default: int) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def env_optional(name: str) -> str | None:
+    value = (os.getenv(name) or "").strip()
+    return value or None
+
+
+def default_browser_settings() -> BrowserSettings:
+    return BrowserSettings(
+        browserBinaryPath=env_optional("BROWSER_PATH"),
+        browserUserDataDir=env_optional("BROWSER_USER_DATA"),
+        useOwnBrowser=env_bool("USE_OWN_BROWSER", False),
+        keepBrowserOpen=env_bool("KEEP_BROWSER_OPEN", True),
+        headless=env_bool("BROWSER_HEADLESS", False),
+        disableSecurity=env_bool("DISABLE_SECURITY", False),
+        cdpUrl=env_optional("BROWSER_CDP"),
+        windowWidth=env_int("RESOLUTION_WIDTH", 1920),
+        windowHeight=env_int("RESOLUTION_HEIGHT", 1080),
+    )
+
+
+def live_browser_url() -> str | None:
+    # In Docker this points at the reused Browser Use Web UI noVNC stack.
+    # Native Windows runs leave it unset and use BrowserSession screenshots.
+    return env_optional("SHAMYLI_LIVE_BROWSER_URL")
 
 
 def parse_model_spec(spec: str) -> tuple[str, str]:
@@ -115,31 +164,28 @@ def build_llm(spec: str):
     raise ValueError(f"Unsupported provider: {provider}")
 
 
-def build_browser_session() -> BrowserSession:
-    """Map the existing Browser Use Web UI browser settings onto current BrowserProfile."""
-    keep_alive = env_bool("KEEP_BROWSER_OPEN", True)
-    use_own_browser = env_bool("USE_OWN_BROWSER", False)
-    headless = env_bool("BROWSER_HEADLESS", False)
-    disable_security = env_bool("DISABLE_SECURITY", False)
-    width = env_int("RESOLUTION_WIDTH", 1920)
-    height = env_int("RESOLUTION_HEIGHT", 1080)
+def build_browser_session(settings: BrowserSettings) -> BrowserSession:
+    """Map Web UI settings onto Browser Use 0.13.10 BrowserProfile.
 
-    cdp_url = (os.getenv("BROWSER_CDP") or "").strip() or None
-    browser_path = (os.getenv("BROWSER_PATH") or "").strip() or None
-    user_data_dir = (os.getenv("BROWSER_USER_DATA") or "").strip() or None
+    Browser Use owns launch, CDP, profile reuse and keep-alive behavior. This
+    function only translates UI setting names to native BrowserProfile fields.
+    """
 
     profile_kwargs: dict[str, Any] = {
-        "headless": headless,
-        "disable_security": disable_security,
-        "keep_alive": keep_alive,
-        "window_size": {"width": width, "height": height},
+        "headless": settings.headless,
+        "disable_security": settings.disable_security,
+        "keep_alive": settings.keep_browser_open,
+        "window_size": {"width": settings.window_width, "height": settings.window_height},
+        "is_local": True,
     }
 
-    # Current Browser Use core natively supports CDP, executable_path and
-    # user_data_dir. We only translate the old Web UI setting names here.
+    cdp_url = (settings.cdp_url or "").strip() or None
+    browser_path = (settings.browser_binary_path or "").strip() or None
+    user_data_dir = (settings.browser_user_data_dir or "").strip() or None
+
     if cdp_url:
         profile_kwargs["cdp_url"] = cdp_url
-    elif use_own_browser:
+    elif settings.use_own_browser:
         if browser_path:
             profile_kwargs["executable_path"] = browser_path
         if user_data_dir:
@@ -148,18 +194,9 @@ def build_browser_session() -> BrowserSession:
     return BrowserSession(browser_profile=BrowserProfile(**profile_kwargs))
 
 
-def browser_settings_snapshot() -> dict[str, Any]:
-    return {
-        "keepBrowserOpen": env_bool("KEEP_BROWSER_OPEN", True),
-        "useOwnBrowser": env_bool("USE_OWN_BROWSER", False),
-        "headless": env_bool("BROWSER_HEADLESS", False),
-        "disableSecurity": env_bool("DISABLE_SECURITY", False),
-        "browserPathConfigured": bool((os.getenv("BROWSER_PATH") or "").strip()),
-        "browserUserDataConfigured": bool((os.getenv("BROWSER_USER_DATA") or "").strip()),
-        "cdpConfigured": bool((os.getenv("BROWSER_CDP") or "").strip()),
-        "windowWidth": env_int("RESOLUTION_WIDTH", 1920),
-        "windowHeight": env_int("RESOLUTION_HEIGHT", 1080),
-    }
+def browser_settings_snapshot(settings: BrowserSettings | None = None) -> dict[str, Any]:
+    selected = settings or default_browser_settings()
+    return selected.model_dump(by_alias=True)
 
 
 def message(role: str, data: dict[str, Any], message_id: str | None = None) -> dict[str, Any]:
@@ -207,7 +244,13 @@ async def health():
         "mode": "local",
         "browserUseCloudRequired": False,
         "browserSettings": browser_settings_snapshot(),
+        "liveBrowserConfigured": live_browser_url() is not None,
     }
+
+
+@app.get("/browser-settings/defaults")
+async def browser_settings_defaults():
+    return browser_settings_snapshot()
 
 
 @app.get("/models")
@@ -231,13 +274,20 @@ async def create_session(body: CreateSessionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    selected_settings = body.browser_settings or default_browser_settings()
     session_id = str(uuid.uuid4())
     sessions[session_id] = LocalSession(
         id=session_id,
-        browser=build_browser_session(),
+        browser=build_browser_session(selected_settings),
         model_spec=body.model,
+        browser_settings=selected_settings,
     )
-    return {"id": session_id, "liveUrl": None, "status": "created"}
+    return {
+        "id": session_id,
+        "liveUrl": live_browser_url(),
+        "status": "created",
+        "browserSettings": browser_settings_snapshot(selected_settings),
+    }
 
 
 @app.get("/sessions/{session_id}/screenshot")
@@ -323,15 +373,36 @@ async def run_session(session_id: str, body: RunRequest):
                 final = history.final_result() or "Task completed."
                 await queue.put(message("assistant", {"content": str(final)}))
                 session.status = "idle"
-                await queue.put({"__done": True, "id": session.id, "liveUrl": None, "status": "idle"})
+                await queue.put(
+                    {
+                        "__done": True,
+                        "id": session.id,
+                        "liveUrl": live_browser_url(),
+                        "status": "idle",
+                    }
+                )
             except asyncio.CancelledError:
                 session.status = "stopped"
-                await queue.put({"__done": True, "id": session.id, "liveUrl": None, "status": "stopped"})
+                await queue.put(
+                    {
+                        "__done": True,
+                        "id": session.id,
+                        "liveUrl": live_browser_url(),
+                        "status": "stopped",
+                    }
+                )
                 raise
             except Exception as exc:
                 session.status = "error"
                 await queue.put({"__error": True, "message": str(exc)})
-                await queue.put({"__done": True, "id": session.id, "liveUrl": None, "status": "error"})
+                await queue.put(
+                    {
+                        "__done": True,
+                        "id": session.id,
+                        "liveUrl": live_browser_url(),
+                        "status": "error",
+                    }
+                )
             finally:
                 session.agent = None
                 await queue.put(None)
