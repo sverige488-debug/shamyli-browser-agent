@@ -29,11 +29,13 @@ from browser_use import (
     Tools,
 )
 
+from mcp_support import MCPServerSettings, connect_mcp_servers, disconnect_mcp_clients
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.10.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.11.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -46,6 +48,7 @@ INSPECT_EXCLUDED_ACTIONS = ["click", "input", "upload_file", "send_keys", "selec
 INSPECT_POLICY_PROMPT = (
     "SHAMYLI STRICT INSPECT MODE IS ACTIVE. Do not change remote website state. "
     "Browser interaction tools that can click, type, send keys, select dropdown values, or upload files are disabled. "
+    "External MCP tools are also disabled because their server-defined side effects cannot be proven read-only. "
     "You may navigate directly to URLs, read/extract/search page content, scroll, take screenshots, and inspect. "
     "If the task requires an interactive or write action, use ask_for_assistant and explain what is blocked. "
     "Never claim that a blocked write or interaction was performed."
@@ -102,6 +105,7 @@ class RunRequest(BaseModel):
     planning_exploration_limit: int = Field(default=5, ge=1, le=50, alias="planningExplorationLimit")
     override_system_prompt: str = Field(default="", max_length=100_000, alias="overrideSystemPrompt")
     extend_system_prompt: str = Field(default="", max_length=100_000, alias="extendSystemPrompt")
+    mcp_servers: list[MCPServerSettings] = Field(default_factory=list, alias="mcpServers", max_length=16)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -413,6 +417,8 @@ async def health():
         "mode": "local",
         "browserUseCloudRequired": False,
         "defaultInteractionMode": "inspect",
+        "nativeMcpClientAvailable": True,
+        "mcpInspectPolicy": "disabled",
         "llmSettings": llm_settings_snapshot(),
         "browserSettings": browser_settings_snapshot(),
         "liveBrowserConfigured": live_browser_url() is not None,
@@ -549,9 +555,26 @@ async def run_session(session_id: str, body: RunRequest):
 
         async def runner():
             agent: Agent | None = None
+            mcp_clients = []
+            skipped_mcp: list[str] = []
             try:
                 llm = build_llm(session.model_spec, session.llm_settings)
                 tools = build_session_tools(session, emit, body.interaction_mode)
+                mcp_clients, skipped_mcp = await connect_mcp_servers(tools, body.mcp_servers, body.interaction_mode)
+                if skipped_mcp:
+                    emit(
+                        message(
+                            "assistant",
+                            {
+                                "content": (
+                                    "Inspect Only kept external MCP tools disabled for this task: "
+                                    + ", ".join(skipped_mcp)
+                                    + ". Switch to Full Browser Control only when you intentionally want those external tools available."
+                                )
+                            },
+                        )
+                    )
+
                 override_system_message = body.override_system_prompt.strip() or None
                 extend_parts: list[str] = []
                 if body.extend_system_prompt.strip():
@@ -590,6 +613,8 @@ async def run_session(session_id: str, body: RunRequest):
                         "liveUrl": live_browser_url(),
                         "status": session.status,
                         "interactionMode": body.interaction_mode,
+                        "mcpConnected": [client.server_name for client in mcp_clients],
+                        "mcpSkipped": skipped_mcp,
                         **artifact_state(session),
                     }
                 )
@@ -604,6 +629,8 @@ async def run_session(session_id: str, body: RunRequest):
                         "liveUrl": live_browser_url(),
                         "status": "stopped",
                         "interactionMode": body.interaction_mode,
+                        "mcpConnected": [client.server_name for client in mcp_clients],
+                        "mcpSkipped": skipped_mcp,
                         **artifact_state(session),
                     }
                 )
@@ -620,10 +647,13 @@ async def run_session(session_id: str, body: RunRequest):
                         "liveUrl": live_browser_url(),
                         "status": "error",
                         "interactionMode": body.interaction_mode,
+                        "mcpConnected": [client.server_name for client in mcp_clients],
+                        "mcpSkipped": skipped_mcp,
                         **artifact_state(session),
                     }
                 )
             finally:
+                await disconnect_mcp_clients(mcp_clients)
                 session.agent = None
                 session.assistance_event = None
                 session.assistance_question = None
