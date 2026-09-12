@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from "react";
-import { stopTask as stopTaskAction } from "@/lib/actions";
+import { pauseTask as pauseTaskAction, resumeTask as resumeTaskAction, stopTask as stopTaskAction } from "@/lib/actions";
 import { convertMessages, groupIntoTurns } from "@/lib/message-converter";
 import type { UIMessage, ConversationTurn, MessageResponse } from "@/lib/types";
 
@@ -13,9 +13,12 @@ interface SessionContextType {
   turns: ConversationTurn[];
   isLoading: boolean;
   isBusy: boolean;
+  isPaused: boolean;
   isTerminal: boolean;
   isSending: boolean;
   sendMessage: (task: string) => Promise<void>;
+  pauseTask: () => Promise<void>;
+  resumeTask: () => Promise<void>;
   stopTask: () => Promise<void>;
 }
 
@@ -29,7 +32,8 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
   const [isLoading, setIsLoading] = useState(!!initialTask);
   const sendingRef = useRef(false);
   const isTerminal = !!session && TERMINAL.has(session.status);
-  const isBusy = session?.status === "running";
+  const isPaused = session?.status === "paused";
+  const isBusy = session?.status === "running" || isPaused;
 
   const streamTask = useCallback(async (task: string) => {
     setIsLoading(false);
@@ -81,12 +85,22 @@ export function SessionProvider({ sessionId, initialLiveUrl, initialTask, childr
     sendMessage(task);
   }, [sendMessage]);
 
+  const pauseTask = useCallback(async () => {
+    await pauseTaskAction(sessionId);
+    setSession((prev) => prev ? { ...prev, status: "paused" } : prev);
+  }, [sessionId]);
+
+  const resumeTask = useCallback(async () => {
+    await resumeTaskAction(sessionId);
+    setSession((prev) => prev ? { ...prev, status: "running" } : prev);
+  }, [sessionId]);
+
   const stopTask = useCallback(async () => {
     await stopTaskAction(sessionId);
     setSession((prev) => prev ? { ...prev, status: "stopped" } : prev);
   }, [sessionId]);
 
-  return <SessionContext.Provider value={{ sessionId, session, messages: serverMessages, turns, isLoading, isBusy, isTerminal, isSending, sendMessage, stopTask }}>{children}</SessionContext.Provider>;
+  return <SessionContext.Provider value={{ sessionId, session, messages: serverMessages, turns, isLoading, isBusy, isPaused, isTerminal, isSending, sendMessage, pauseTask, resumeTask, stopTask }}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {
