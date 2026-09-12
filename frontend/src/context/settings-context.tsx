@@ -27,6 +27,9 @@ const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   cdpUrl: "",
   windowWidth: 1920,
   windowHeight: 1080,
+  saveRecordingPath: "",
+  tracePath: "",
+  saveDownloadPath: "./tmp/downloads",
 };
 
 function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): BrowserSettings {
@@ -40,6 +43,9 @@ function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): Browse
     cdpUrl: raw?.cdpUrl ?? "",
     windowWidth: raw?.windowWidth ?? FALLBACK_BROWSER_SETTINGS.windowWidth,
     windowHeight: raw?.windowHeight ?? FALLBACK_BROWSER_SETTINGS.windowHeight,
+    saveRecordingPath: raw?.saveRecordingPath ?? "",
+    tracePath: raw?.tracePath ?? "",
+    saveDownloadPath: raw?.saveDownloadPath ?? FALLBACK_BROWSER_SETTINGS.saveDownloadPath,
   };
 }
 
