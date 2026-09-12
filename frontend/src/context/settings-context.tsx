@@ -43,6 +43,8 @@ const FALLBACK_AGENT_SETTINGS: AgentSettings = {
   enablePlanning: true,
   planningReplanOnStall: 3,
   planningExplorationLimit: 5,
+  overrideSystemPrompt: "",
+  extendSystemPrompt: "",
 };
 
 function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): BrowserSettings {
@@ -76,6 +78,8 @@ function normalizeAgentSettings(raw?: Partial<AgentSettings> | null): AgentSetti
     enablePlanning: raw?.enablePlanning ?? FALLBACK_AGENT_SETTINGS.enablePlanning,
     planningReplanOnStall,
     planningExplorationLimit,
+    overrideSystemPrompt: raw?.overrideSystemPrompt ?? "",
+    extendSystemPrompt: raw?.extendSystemPrompt ?? "",
   };
 }
 
