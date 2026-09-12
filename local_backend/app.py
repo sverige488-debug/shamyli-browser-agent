@@ -36,7 +36,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.8.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.9.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -44,6 +44,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class LLMSettings(BaseModel):
+    """Safe, non-secret model tuning copied from the legacy Web UI contract.
+
+    API keys intentionally stay in environment variables instead of being stored
+    in the browser/localStorage.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    temperature: float = Field(default=0.6, ge=0.0, le=2.0)
+    base_url: str = Field(default="", max_length=2048, alias="baseUrl")
+    ollama_num_ctx: int = Field(default=16000, ge=256, le=65536, alias="ollamaNumCtx")
 
 
 class BrowserSettings(BaseModel):
@@ -72,6 +86,7 @@ class BrowserSettings(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     model: str = "openrouter::anthropic/claude-sonnet-4-6"
+    llm_settings: LLMSettings | None = Field(default=None, alias="llmSettings")
     browser_settings: BrowserSettings | None = Field(default=None, alias="browserSettings")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -101,6 +116,7 @@ class LocalSession:
     id: str
     browser: BrowserSession
     model_spec: str
+    llm_settings: LLMSettings
     browser_settings: BrowserSettings
     status: str = "created"
     agent: Agent | None = None
@@ -141,6 +157,14 @@ def env_optional(name: str) -> str | None:
     return value or None
 
 
+def default_llm_settings() -> LLMSettings:
+    return LLMSettings(
+        temperature=0.6,
+        baseUrl="",
+        ollamaNumCtx=16000,
+    )
+
+
 def default_browser_settings() -> BrowserSettings:
     return BrowserSettings(
         browserBinaryPath=env_optional("BROWSER_PATH") or "",
@@ -176,21 +200,40 @@ def parse_model_spec(spec: str) -> tuple[str, str]:
     return provider, model
 
 
-def build_llm(spec: str):
-    """Thin selector over Browser Use's native, tested provider classes."""
+def build_llm(spec: str, settings: LLMSettings | None = None):
+    """Thin selector over Browser Use's native, tested provider classes.
+
+    The old Web UI exposed temperature/base URL/Ollama context. Current native
+    provider fields are used directly. API keys remain environment-only.
+    """
+
+    selected = settings or default_llm_settings()
     provider, model = parse_model_spec(spec)
+    base_url = selected.base_url.strip() or None
+    temperature = selected.temperature
+
     if provider == "openrouter":
-        return ChatOpenRouter(model=model)
+        kwargs: dict[str, Any] = {"model": model, "temperature": temperature}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return ChatOpenRouter(**kwargs)
     if provider == "groq":
-        return ChatGroq(model=model)
+        return ChatGroq(model=model, temperature=temperature, base_url=base_url)
     if provider == "openai":
-        return ChatOpenAI(model=model)
+        return ChatOpenAI(model=model, temperature=temperature, base_url=base_url)
     if provider == "anthropic":
-        return ChatAnthropic(model=model, temperature=0.0)
+        return ChatAnthropic(model=model, temperature=temperature, base_url=base_url)
     if provider in {"google", "gemini"}:
-        return ChatGoogle(model=model)
+        # ChatGoogle does not expose the old generic base_url field in 0.13.10.
+        return ChatGoogle(model=model, temperature=temperature)
     if provider == "ollama":
-        return ChatOllama(model=model, num_ctx=32000)
+        # Current ChatOllama takes context/temperature through ollama_options;
+        # the old direct num_ctx constructor argument is no longer valid.
+        return ChatOllama(
+            model=model,
+            host=base_url or env_optional("OLLAMA_HOST"),
+            ollama_options={"num_ctx": selected.ollama_num_ctx, "temperature": temperature},
+        )
     raise ValueError(f"Unsupported provider: {provider}")
 
 
@@ -233,6 +276,11 @@ def build_browser_session(settings: BrowserSettings) -> BrowserSession:
         profile_kwargs["downloads_path"] = download_path
 
     return BrowserSession(browser_profile=BrowserProfile(**profile_kwargs))
+
+
+def llm_settings_snapshot(settings: LLMSettings | None = None) -> dict[str, Any]:
+    selected = settings or default_llm_settings()
+    return selected.model_dump(by_alias=True)
 
 
 def browser_settings_snapshot(settings: BrowserSettings | None = None) -> dict[str, Any]:
@@ -390,6 +438,7 @@ async def health():
         "ok": True,
         "mode": "local",
         "browserUseCloudRequired": False,
+        "llmSettings": llm_settings_snapshot(),
         "browserSettings": browser_settings_snapshot(),
         "liveBrowserConfigured": live_browser_url() is not None,
     }
@@ -421,19 +470,22 @@ async def create_session(body: CreateSessionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    selected_settings = body.browser_settings or default_browser_settings()
+    selected_llm_settings = body.llm_settings or default_llm_settings()
+    selected_browser_settings = body.browser_settings or default_browser_settings()
     session_id = str(uuid.uuid4())
     sessions[session_id] = LocalSession(
         id=session_id,
-        browser=build_browser_session(selected_settings),
+        browser=build_browser_session(selected_browser_settings),
         model_spec=body.model,
-        browser_settings=selected_settings,
+        llm_settings=selected_llm_settings,
+        browser_settings=selected_browser_settings,
     )
     return {
         "id": session_id,
         "liveUrl": live_browser_url(),
         "status": "created",
-        "browserSettings": browser_settings_snapshot(selected_settings),
+        "llmSettings": llm_settings_snapshot(selected_llm_settings),
+        "browserSettings": browser_settings_snapshot(selected_browser_settings),
         "historyAvailable": False,
         "gifAvailable": False,
     }
@@ -536,7 +588,7 @@ async def run_session(session_id: str, body: RunRequest):
         async def runner():
             agent: Agent | None = None
             try:
-                llm = build_llm(session.model_spec)
+                llm = build_llm(session.model_spec, session.llm_settings)
                 tools = build_session_tools(session, emit)
                 override_system_message = body.override_system_prompt.strip() or None
                 extend_system_message = body.extend_system_prompt.strip() or None
