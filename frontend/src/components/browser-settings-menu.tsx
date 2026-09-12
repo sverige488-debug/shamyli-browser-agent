@@ -124,7 +124,7 @@ export function BrowserSettingsMenu() {
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1 right-0 w-[380px] max-h-[560px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
+        <div className="absolute bottom-full mb-1 right-0 w-[380px] max-h-[600px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-50">
           <div className="px-3 py-2 border-b border-zinc-800">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browser settings</div>
             <p className="mt-1 text-[11px] leading-4 text-zinc-500">
@@ -167,7 +167,7 @@ export function BrowserSettingsMenu() {
           <div className="p-3 space-y-3 border-b border-zinc-800">
             <div>
               <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browser output paths</div>
-              <p className="mt-1 text-[11px] leading-4 text-zinc-600">Native Browser Use recording, trace, and download directories.</p>
+              <p className="mt-1 text-[11px] leading-4 text-zinc-600">Native Browser Use recording, trace, download, and agent-history directories.</p>
             </div>
             <TextField
               label="Recording Path"
@@ -186,6 +186,12 @@ export function BrowserSettingsMenu() {
               value={draft.saveDownloadPath}
               onChange={(value) => patch({ saveDownloadPath: value })}
               placeholder="e.g. ./tmp/downloads"
+            />
+            <TextField
+              label="Agent History Path"
+              value={draft.saveAgentHistoryPath}
+              onChange={(value) => patch({ saveAgentHistoryPath: value })}
+              placeholder="e.g. ./tmp/agent_history"
             />
           </div>
 
