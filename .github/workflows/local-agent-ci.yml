@@ -34,6 +34,13 @@ jobs:
       - run: python -m py_compile local_backend/app.py local_backend/browser_smoke.py
       - run: python -c "import sys; sys.path.insert(0, 'local_backend'); import app; print(app.app.title)"
 
+  docker-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate local noVNC compose file
+        run: docker compose -f docker-compose.local-agent.yml config --quiet
+
   browser-smoke:
     timeout-minutes: 15
     strategy:
