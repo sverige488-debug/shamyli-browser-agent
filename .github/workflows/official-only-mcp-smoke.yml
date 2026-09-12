@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - shamyli/official-openwebui-mcp
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
