@@ -34,7 +34,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.4.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -76,7 +76,11 @@ class CreateSessionRequest(BaseModel):
 
 class RunRequest(BaseModel):
     task: str = Field(min_length=1)
-    max_steps: int = Field(default=25, ge=1, le=100)
+    max_steps: int = Field(default=25, ge=1, le=100, alias="maxSteps")
+    max_actions_per_step: int = Field(default=5, ge=1, le=20, alias="maxActionsPerStep")
+    use_vision: bool = Field(default=True, alias="useVision")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 @dataclass
@@ -383,7 +387,8 @@ async def run_session(session_id: str, body: RunRequest):
                     llm=llm,
                     browser_session=session.browser,
                     register_new_step_callback=on_step,
-                    use_vision=True,
+                    use_vision=body.use_vision,
+                    max_actions_per_step=body.max_actions_per_step,
                 )
                 session.agent = agent
                 history = await agent.run(max_steps=body.max_steps)
