@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
@@ -29,14 +29,11 @@ from browser_use import (
     Tools,
 )
 
-# Reuse the environment variable names already shipped by Browser Use Web UI.
-# Root .env is the primary configuration file; local_backend/.env can override
-# only variables that are not already present in the process/root file.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env", override=False)
 load_dotenv(Path(__file__).with_name(".env"), override=False)
 
-app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.9.0")
+app = FastAPI(title="SHAMYLI Browser Agent Local API", version="0.10.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -45,13 +42,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+INSPECT_EXCLUDED_ACTIONS = ["click", "input", "upload_file", "send_keys", "select_dropdown"]
+INSPECT_POLICY_PROMPT = (
+    "SHAMYLI STRICT INSPECT MODE IS ACTIVE. Do not change remote website state. "
+    "Browser interaction tools that can click, type, send keys, select dropdown values, or upload files are disabled. "
+    "You may navigate directly to URLs, read/extract/search page content, scroll, take screenshots, and inspect. "
+    "If the task requires an interactive or write action, use ask_for_assistant and explain what is blocked. "
+    "Never claim that a blocked write or interaction was performed."
+)
+
 
 class LLMSettings(BaseModel):
-    """Safe, non-secret model tuning copied from the legacy Web UI contract.
-
-    API keys intentionally stay in environment variables instead of being stored
-    in the browser/localStorage.
-    """
+    """Safe non-secret model tuning copied from the legacy Web UI contract."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -61,11 +63,7 @@ class LLMSettings(BaseModel):
 
 
 class BrowserSettings(BaseModel):
-    """Thin translation of Browser Use Web UI browser settings.
-
-    These values are passed straight into Browser Use's native BrowserProfile.
-    The adapter intentionally does not reimplement browser/session behavior.
-    """
+    """Thin translation of Browser Use Web UI settings to BrowserProfile."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -94,6 +92,7 @@ class CreateSessionRequest(BaseModel):
 
 class RunRequest(BaseModel):
     task: str = Field(min_length=1)
+    interaction_mode: Literal["inspect", "full"] = Field(default="inspect", alias="interactionMode")
     max_steps: int = Field(default=25, ge=1, le=100, alias="maxSteps")
     max_actions_per_step: int = Field(default=5, ge=1, le=20, alias="maxActionsPerStep")
     use_vision: bool = Field(default=True, alias="useVision")
@@ -158,11 +157,7 @@ def env_optional(name: str) -> str | None:
 
 
 def default_llm_settings() -> LLMSettings:
-    return LLMSettings(
-        temperature=0.6,
-        baseUrl="",
-        ollamaNumCtx=16000,
-    )
+    return LLMSettings(temperature=0.6, baseUrl="", ollamaNumCtx=16000)
 
 
 def default_browser_settings() -> BrowserSettings:
@@ -184,8 +179,6 @@ def default_browser_settings() -> BrowserSettings:
 
 
 def live_browser_url() -> str | None:
-    # In Docker this points at the reused Browser Use Web UI noVNC stack.
-    # Native Windows runs leave it unset and use BrowserSession screenshots.
     return env_optional("SHAMYLI_LIVE_BROWSER_URL")
 
 
@@ -201,11 +194,7 @@ def parse_model_spec(spec: str) -> tuple[str, str]:
 
 
 def build_llm(spec: str, settings: LLMSettings | None = None):
-    """Thin selector over Browser Use's native, tested provider classes.
-
-    The old Web UI exposed temperature/base URL/Ollama context. Current native
-    provider fields are used directly. API keys remain environment-only.
-    """
+    """Thin selector over Browser Use's native provider classes."""
 
     selected = settings or default_llm_settings()
     provider, model = parse_model_spec(spec)
@@ -224,11 +213,8 @@ def build_llm(spec: str, settings: LLMSettings | None = None):
     if provider == "anthropic":
         return ChatAnthropic(model=model, temperature=temperature, base_url=base_url)
     if provider in {"google", "gemini"}:
-        # ChatGoogle does not expose the old generic base_url field in 0.13.10.
         return ChatGoogle(model=model, temperature=temperature)
     if provider == "ollama":
-        # Current ChatOllama takes context/temperature through ollama_options;
-        # the old direct num_ctx constructor argument is no longer valid.
         return ChatOllama(
             model=model,
             host=base_url or env_optional("OLLAMA_HOST"),
@@ -238,12 +224,7 @@ def build_llm(spec: str, settings: LLMSettings | None = None):
 
 
 def build_browser_session(settings: BrowserSettings) -> BrowserSession:
-    """Map Web UI settings onto Browser Use 0.13.10 BrowserProfile.
-
-    Browser Use owns launch, CDP, profile reuse, recordings, traces, downloads
-    and keep-alive behavior. This function only translates UI setting names to
-    native BrowserProfile fields.
-    """
+    """Translate Web UI settings into Browser Use 0.13.10 BrowserProfile."""
 
     profile_kwargs: dict[str, Any] = {
         "headless": settings.headless,
@@ -279,13 +260,11 @@ def build_browser_session(settings: BrowserSettings) -> BrowserSession:
 
 
 def llm_settings_snapshot(settings: LLMSettings | None = None) -> dict[str, Any]:
-    selected = settings or default_llm_settings()
-    return selected.model_dump(by_alias=True)
+    return (settings or default_llm_settings()).model_dump(by_alias=True)
 
 
 def browser_settings_snapshot(settings: BrowserSettings | None = None) -> dict[str, Any]:
-    selected = settings or default_browser_settings()
-    return selected.model_dump(by_alias=True)
+    return (settings or default_browser_settings()).model_dump(by_alias=True)
 
 
 def session_artifact_paths(session: LocalSession, run_id: str) -> tuple[Path, Path]:
@@ -296,15 +275,12 @@ def session_artifact_paths(session: LocalSession, run_id: str) -> tuple[Path, Pa
 
 
 def persist_agent_history(session: LocalSession, agent: Agent, history_path: Path, gif_path: Path) -> None:
-    """Use Browser Use's native save_history and generated GIF output."""
     try:
         agent.save_history(history_path)
     except Exception:
-        # History is useful but should not turn a completed browsing task into an error.
         session.last_history_path = None
     else:
         session.last_history_path = history_path if history_path.exists() else None
-
     session.last_gif_path = gif_path if gif_path.exists() else None
 
 
@@ -354,28 +330,27 @@ def action_to_tool_calls(output: Any, step: int) -> list[dict[str, Any]]:
     return calls
 
 
-def build_session_tools(session: LocalSession, emit: Callable[[dict[str, Any] | None], None]) -> Tools:
-    """Reuse Browser Use's current Tools registry and port Web UI's help action.
+def build_session_tools(
+    session: LocalSession,
+    emit: Callable[[dict[str, Any] | None], None],
+    interaction_mode: Literal["inspect", "full"] = "full",
+) -> Tools:
+    """Reuse native Tools, optionally excluding mutating interaction actions."""
 
-    The legacy Web UI shipped `ask_for_assistant` as a custom Controller action.
-    Browser Use 0.13.10 renamed Controller to Tools, so this is a thin adaptation
-    of that proven interaction pattern rather than a new browser/action engine.
-    """
-
-    tools = Tools()
+    excluded = INSPECT_EXCLUDED_ACTIONS if interaction_mode == "inspect" else None
+    tools = Tools(exclude_actions=excluded)
 
     @tools.action(
         "When executing tasks, prioritize autonomous completion. If you encounter a definitive blocker that prevents "
         "independent progress — such as credentials you do not possess, subjective human judgment, a physical action, "
-        "a complex CAPTCHA, or a capability limitation — request human assistance. Explain exactly what the human "
-        "needs to provide or do, then wait for their response before continuing.",
+        "a complex CAPTCHA, a disabled interaction in Inspect Mode, or a capability limitation — request human "
+        "assistance. Explain exactly what the human needs to provide or do, then wait for their response before continuing.",
         terminates_sequence=True,
     )
     async def ask_for_assistant(query: str):
         query = query.strip()
         if not query:
             return ActionResult(error="Human assistance request was empty.")
-
         if session.assistance_event is not None and not session.assistance_event.is_set():
             return ActionResult(error="A human assistance request is already pending.")
 
@@ -383,7 +358,6 @@ def build_session_tools(session: LocalSession, emit: Callable[[dict[str, Any] | 
         session.assistance_response = None
         session.assistance_event = asyncio.Event()
         session.status = "waiting_for_user"
-
         emit(
             message(
                 "assistant",
@@ -438,6 +412,7 @@ async def health():
         "ok": True,
         "mode": "local",
         "browserUseCloudRequired": False,
+        "defaultInteractionMode": "inspect",
         "llmSettings": llm_settings_snapshot(),
         "browserSettings": browser_settings_snapshot(),
         "liveBrowserConfigured": live_browser_url() is not None,
@@ -493,18 +468,15 @@ async def create_session(body: CreateSessionRequest):
 
 @app.get("/sessions/{session_id}/screenshot")
 async def session_screenshot(session_id: str):
-    """Reuse BrowserSession.take_screenshot(), the same capability used by Web UI/core."""
     session = sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status == "created":
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
-
     try:
         data = await session.browser.take_screenshot(full_page=False)
     except Exception:
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
-
     if not data:
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
     return Response(
@@ -556,26 +528,16 @@ async def run_session(session_id: str, body: RunRequest):
         await queue.put(message("user", {"content": body.task}))
 
         def emit(item: dict[str, Any] | None) -> None:
-            # Browser Use callbacks may be invoked outside the request coroutine.
             loop.call_soon_threadsafe(queue.put_nowait, item)
 
         def on_step(state: Any, output: Any, step: int):
             tool_calls = action_to_tool_calls(output, step)
-            thought = ""
             current_state = getattr(output, "current_state", None)
-            if current_state is not None:
-                thought = str(getattr(current_state, "next_goal", "") or "")
+            thought = str(getattr(current_state, "next_goal", "") or "") if current_state is not None else ""
             if not thought:
                 thought = f"Step {step}"
-
             assistant_id = f"step-{step}-assistant"
-            emit(
-                message(
-                    "assistant",
-                    {"content": thought, "tool_calls": tool_calls},
-                    assistant_id,
-                )
-            )
+            emit(message("assistant", {"content": thought, "tool_calls": tool_calls}, assistant_id))
             for call in tool_calls:
                 emit(
                     message(
@@ -589,9 +551,15 @@ async def run_session(session_id: str, body: RunRequest):
             agent: Agent | None = None
             try:
                 llm = build_llm(session.model_spec, session.llm_settings)
-                tools = build_session_tools(session, emit)
+                tools = build_session_tools(session, emit, body.interaction_mode)
                 override_system_message = body.override_system_prompt.strip() or None
-                extend_system_message = body.extend_system_prompt.strip() or None
+                extend_parts: list[str] = []
+                if body.extend_system_prompt.strip():
+                    extend_parts.append(body.extend_system_prompt.strip())
+                if body.interaction_mode == "inspect":
+                    extend_parts.append(INSPECT_POLICY_PROMPT)
+                extend_system_message = "\n\n".join(extend_parts) or None
+
                 agent = Agent(
                     task=body.task,
                     llm=llm,
@@ -621,6 +589,7 @@ async def run_session(session_id: str, body: RunRequest):
                         "id": session.id,
                         "liveUrl": live_browser_url(),
                         "status": session.status,
+                        "interactionMode": body.interaction_mode,
                         **artifact_state(session),
                     }
                 )
@@ -634,6 +603,7 @@ async def run_session(session_id: str, body: RunRequest):
                         "id": session.id,
                         "liveUrl": live_browser_url(),
                         "status": "stopped",
+                        "interactionMode": body.interaction_mode,
                         **artifact_state(session),
                     }
                 )
@@ -649,6 +619,7 @@ async def run_session(session_id: str, body: RunRequest):
                         "id": session.id,
                         "liveUrl": live_browser_url(),
                         "status": "error",
+                        "interactionMode": body.interaction_mode,
                         **artifact_state(session),
                     }
                 )
@@ -680,11 +651,9 @@ async def submit_assistance_response(session_id: str, body: AssistanceResponseRe
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status != "waiting_for_user" or session.assistance_event is None:
         raise HTTPException(status_code=409, detail="No human assistance request is pending")
-
     response = body.response.strip()
     if not response:
         raise HTTPException(status_code=400, detail="Assistance response cannot be empty")
-
     session.assistance_response = response
     session.assistance_event.set()
     return {"ok": True, "status": "resuming"}
