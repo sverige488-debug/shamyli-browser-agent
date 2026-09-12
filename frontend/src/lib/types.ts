@@ -17,6 +17,11 @@ export interface BrowserSettings {
   tracePath: string;
   saveDownloadPath: string;
 }
+export interface AgentSettings {
+  maxSteps: number;
+  maxActionsPerStep: number;
+  useVision: boolean;
+}
 export interface UIMessage { id: string; role: "user" | "assistant"; content: string; toolCalls?: UIToolCall[]; createdAt: string; }
 export interface UIToolCall { id: string; name: string; displayName: string; displayValue: string; args: Record<string, unknown>; status: ToolStatus; result?: string; isError?: boolean; type: ToolCallType; }
 export type ToolStatus = "pending" | "running" | "completed" | "error";
