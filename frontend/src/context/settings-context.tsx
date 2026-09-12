@@ -3,12 +3,14 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getBrowserDefaults, listModelPresets } from "@/lib/actions";
-import type { AgentSettings, BrowserSettings, ModelPreset } from "@/lib/types";
+import type { AgentSettings, BrowserSettings, LLMSettings, ModelPreset } from "@/lib/types";
 
 interface SettingsContextType {
   model: string;
   setModel: (m: string) => void;
   presets: ModelPreset[];
+  llmSettings: LLMSettings;
+  setLLMSettings: (settings: LLMSettings) => void;
   browserSettings: BrowserSettings;
   setBrowserSettings: (settings: BrowserSettings) => void;
   agentSettings: AgentSettings;
@@ -18,8 +20,14 @@ interface SettingsContextType {
 
 const SettingsContext = createContext<SettingsContextType | null>(null);
 const DEFAULT_MODEL = "openrouter::anthropic/claude-sonnet-4-6";
+const LLM_SETTINGS_KEY = "shamyli-llm-settings";
 const BROWSER_SETTINGS_KEY = "shamyli-browser-settings";
 const AGENT_SETTINGS_KEY = "shamyli-agent-settings";
+const FALLBACK_LLM_SETTINGS: LLMSettings = {
+  temperature: 0.6,
+  baseUrl: "",
+  ollamaNumCtx: 16000,
+};
 const FALLBACK_BROWSER_SETTINGS: BrowserSettings = {
   browserBinaryPath: "",
   browserUserDataDir: "",
@@ -46,6 +54,22 @@ const FALLBACK_AGENT_SETTINGS: AgentSettings = {
   overrideSystemPrompt: "",
   extendSystemPrompt: "",
 };
+
+function normalizeLLMSettings(raw?: Partial<LLMSettings> | null): LLMSettings {
+  const temperatureValue = Number(raw?.temperature);
+  const temperature = Number.isFinite(temperatureValue)
+    ? Math.min(2, Math.max(0, temperatureValue))
+    : FALLBACK_LLM_SETTINGS.temperature;
+  const ctxValue = Number(raw?.ollamaNumCtx);
+  const ollamaNumCtx = Number.isFinite(ctxValue)
+    ? Math.min(65536, Math.max(256, Math.round(ctxValue)))
+    : FALLBACK_LLM_SETTINGS.ollamaNumCtx;
+  return {
+    temperature,
+    baseUrl: raw?.baseUrl?.trim() ?? "",
+    ollamaNumCtx,
+  };
+}
 
 function normalizeBrowserSettings(raw?: Partial<BrowserSettings> | null): BrowserSettings {
   return {
@@ -99,6 +123,7 @@ function usePersisted(key: string, fallback: string) {
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [model, setModel] = usePersisted("shamyli-local-model", DEFAULT_MODEL);
+  const [llmSettings, setLLMSettingsState] = useState<LLMSettings>(FALLBACK_LLM_SETTINGS);
   const [browserSettings, setBrowserSettingsState] = useState<BrowserSettings>(FALLBACK_BROWSER_SETTINGS);
   const [browserHydrated, setBrowserHydrated] = useState(false);
   const [agentSettings, setAgentSettingsState] = useState<AgentSettings>(FALLBACK_AGENT_SETTINGS);
@@ -113,6 +138,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     queryFn: getBrowserDefaults,
     staleTime: 60_000,
   });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(LLM_SETTINGS_KEY);
+    if (!saved) return;
+    try {
+      setLLMSettingsState(normalizeLLMSettings(JSON.parse(saved) as Partial<LLMSettings>));
+    } catch {
+      localStorage.removeItem(LLM_SETTINGS_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(AGENT_SETTINGS_KEY);
@@ -147,6 +182,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (!isLoadingBrowserDefaults) setBrowserHydrated(true);
   }, [browserDefaults, browserHydrated, isLoadingBrowserDefaults]);
 
+  const setLLMSettings = useCallback((settings: LLMSettings) => {
+    const normalized = normalizeLLMSettings(settings);
+    setLLMSettingsState(normalized);
+    localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(normalized));
+  }, []);
+
   const setBrowserSettings = useCallback((settings: BrowserSettings) => {
     const normalized = normalizeBrowserSettings(settings);
     setBrowserSettingsState(normalized);
@@ -164,7 +205,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   return (
     <SettingsContext.Provider
-      value={{ model, setModel, presets, browserSettings, setBrowserSettings, agentSettings, setAgentSettings, isLoadingSettings }}
+      value={{
+        model,
+        setModel,
+        presets,
+        llmSettings,
+        setLLMSettings,
+        browserSettings,
+        setBrowserSettings,
+        agentSettings,
+        setAgentSettings,
+        isLoadingSettings,
+      }}
     >
       {children}
     </SettingsContext.Provider>
