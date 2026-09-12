@@ -6,7 +6,7 @@ Do **not** invent a new feature implementation when Browser Use already ships a 
 
 1. `browser-use/chat-ui-example` — modern Next.js/React/Tailwind UX.
 2. `browser-use/web-ui` — mature local/self-hosted browser + agent controls.
-3. `browser-use/browser-use` — official core runtime, browser/session logic and native LLM providers.
+3. `browser-use/browser-use` — official core runtime, browser/session logic, native LLM providers, and native MCP support.
 
 New SHAMYLI code is allowed only for the **smallest adapter/glue layer** required to connect incompatible stacks (React/TypeScript frontend ↔ Python Browser Use runtime) or for SHAMYLI-specific safety policy that does not exist upstream.
 
@@ -20,32 +20,33 @@ New SHAMYLI code is allowed only for the **smallest adapter/glue layer** require
 | Session page | `chat-ui-example` | Modern session layout | Reuse |
 | Browser panel UX | `chat-ui-example` | Right-side browser panel / `liveUrl` concept | Reuse UI |
 | Follow-up task UX | `chat-ui-example` | Same-session follow-up flow | Reuse |
-| Stop task UX | `chat-ui-example` | Stop control | Reuse |
+| Stop task UX | `chat-ui-example` + core | Stop control + native `Agent.stop()` | Reuse |
 | Model/profile/workspace UX | `chat-ui-example` | Existing selectors/settings patterns | Reuse UI; replace Cloud calls only |
 | Local Browser Use execution | `browser-use` core | `Agent`, `BrowserSession` | Reuse directly |
 | Native LLM providers | `browser-use` core | OpenRouter, Groq, OpenAI, Anthropic, Google, Ollama, etc. | Reuse directly; no provider reimplementation |
-| Browser binary path | `web-ui` | `browser_settings_tab.py` | Port setting |
-| Browser user-data dir | `web-ui` | `browser_settings_tab.py` | Port setting |
-| Use Own Browser | `web-ui` | `USE_OWN_BROWSER` | Port behavior |
-| Keep Browser Open | `web-ui` | `KEEP_BROWSER_OPEN` | Port behavior |
-| Headless setting | `web-ui` | Browser settings | Port behavior |
-| CDP URL | `web-ui` | `BROWSER_CDP` | Port behavior |
-| WSS URL | `web-ui` | Browser settings | Port behavior |
-| Window width/height | `web-ui` | Browser settings | Port behavior |
-| Recording path | `web-ui` | Browser settings | Port behavior |
-| Trace path | `web-ui` | Browser settings | Port behavior |
-| Agent history path | `web-ui` | Browser settings | Port behavior |
-| Download path | `web-ui` | Browser settings | Port behavior |
-| Agent max steps/actions/tokens | `web-ui` | `browser_use_agent_tab.py` settings flow | Port behavior |
-| Use Vision | `web-ui` / core | Existing agent setting | Port behavior |
-| Tool calling method | `web-ui` | Existing setting | Port behavior |
-| MCP server config | `web-ui` | Existing setting | Port behavior |
-| Planner LLM | `web-ui` | Existing planner settings | Port behavior later |
-| Pause / Resume | `web-ui` | Existing agent control | Reuse behavior later |
-| Ask-for-assistance | `web-ui` | Existing callback / user-response flow | Reuse behavior later |
-| Per-step screenshots | `web-ui` | Existing screenshot handling in agent callback | Reuse if needed; do not invent screenshot protocol |
-| Live browser via noVNC | `web-ui` Docker stack | VNC/noVNC already wired in Dockerfile / supervisord / compose | Prefer reuse over custom live-stream code |
-| Browser state/screenshots | `browser-use` core | Existing BrowserSession APIs | Reuse only when noVNC is not suitable |
+| Browser binary path | `web-ui` + current `BrowserProfile` | Browser settings semantics | Port setting through thin mapping |
+| Browser user-data dir | `web-ui` + current `BrowserProfile` | Persistent profile semantics | Port setting through thin mapping |
+| Use Own Browser | `web-ui` + current `BrowserProfile` | Existing behavior | Reuse semantics |
+| Keep Browser Open | `web-ui` + current `BrowserProfile.keep_alive` | Existing behavior | Reuse semantics |
+| Headless / security | `web-ui` + current `BrowserProfile` | Current profile fields | Reuse |
+| CDP URL | `web-ui` + current `BrowserProfile.cdp_url` | Existing browser attach path | Reuse |
+| WSS URL | legacy `web-ui` only | No verified current 0.13.10 native field | Do not port / do not invent |
+| Window width/height | `web-ui` + current `BrowserProfile.window_size` | Current profile field | Reuse |
+| Recording / trace / downloads | `web-ui` + current Browser Use profile fields | Current paths | Reuse |
+| Agent history | Browser Use core | `Agent.save_history()` | Reuse directly |
+| Agent max steps/actions | `web-ui` + current `Agent` | Current run/constructor controls | Reuse |
+| Legacy max input tokens | old `web-ui` | No verified current Agent constructor equivalent | Do not port / do not invent |
+| Use Vision | `web-ui` / core | Native Agent setting | Reuse |
+| Legacy tool calling method | old `web-ui` | No verified current Agent constructor equivalent | Do not port / do not invent |
+| Planning | Browser Use core | Native built-in planning fields | Reuse; do not recreate separate planner LLM |
+| Pause / Resume | `web-ui` + Browser Use core | Native `agent.pause()` / `agent.resume()` | Reuse |
+| Ask-for-assistance | `web-ui` pattern + current `Tools` / `ActionResult` | Proven wait/resume UX pattern | Port only thin callback bridge |
+| MCP external servers | Browser Use 0.13.10 core | `browser_use.mcp.client.MCPClient.register_to_tools()` | Reuse native client; retire old custom LangChain bridge |
+| Browser Use as MCP server | Browser Use 0.13.10 core | `browser_use.mcp.server`, `browser-use --mcp` | Preserve as separate interoperability mode |
+| MCP protocol dependency | Browser Use 0.13.10 core | pinned `mcp==2.1.1` | Reuse; no second MCP stack |
+| Per-step screenshots | Browser Use core / old Web UI presentation | Native state/screenshot APIs | Reuse; do not invent screenshot engine |
+| Live browser via noVNC | `web-ui` Docker stack | Xvfb + x11vnc + noVNC | Reuse |
+| Browser state/screenshots | `browser-use` core | `BrowserSession` APIs | Reuse only when noVNC is not suitable |
 
 ---
 
@@ -61,20 +62,18 @@ New SHAMYLI code is allowed only for the **smallest adapter/glue layer** require
   - Headless Mode
   - Disable Security
   - Window width/height
-  - CDP URL
-  - WSS URL
+  - CDP / legacy WSS controls
   - Recording / trace / history / download paths
 
 - `src/webui/components/browser_use_agent_tab.py`
-  - Native LLM initialization through the project's provider helper
+  - LLM/provider settings semantics
   - Browser settings retrieval
   - Agent lifecycle
   - Per-step screenshot handling
   - Stop / Pause / Resume controls
   - User-assistance callback
-  - max steps/actions/input tokens
-  - MCP config
-  - optional planner LLM
+  - legacy MCP config UX
+  - legacy planner/max-token/tool-calling fields that must not be blindly copied to the current runtime
 
 - `Dockerfile`, `supervisord.conf`, `docker-compose.yml`
   - x11vnc / TigerVNC / noVNC stack
@@ -82,21 +81,25 @@ New SHAMYLI code is allowed only for the **smallest adapter/glue layer** require
 
 ### `browser-use/chat-ui-example`
 
-- `src/lib/api.ts`
-  - confirms the modern UI is intentionally thin and currently points to Browser Use Cloud SDK
-  - our replacement target is this API boundary, not the whole UI
+- modern Next.js/React/Tailwind chat/session components are the UI base;
+- its API boundary is replaced by the thin localhost adapter, not by rewriting the UI.
 
-### `browser-use/browser-use`
+### `browser-use/browser-use` 0.13.10
 
-- Official `Agent` and `BrowserSession`
-- Native provider classes
-- Browser/session/CDP implementation
+- official `Agent`, `BrowserSession`, `BrowserProfile`;
+- native provider classes;
+- browser/session/CDP implementation;
+- native `Tools` registry and action exclusion;
+- native planning/history/GIF/screenshot behavior;
+- pinned `mcp==2.1.1`;
+- `browser_use.mcp.client.MCPClient` for external MCP servers;
+- `browser_use.mcp.server` + `browser-use --mcp` for exposing Browser Use as an MCP server.
 
 ---
 
 ## What we keep custom
 
-Only a small local API adapter is justified because the two official UIs use different stacks:
+Only a small local API adapter is justified because the official UI/runtime layers use different stacks:
 
 ```text
 Next.js Chat UI
@@ -108,30 +111,44 @@ Browser Use Python runtime
 
 The adapter may translate:
 
-- create session
-- run/follow-up task
-- stream step events
-- stop/pause/resume
-- browser settings from UI to existing Browser Use objects
-- model/provider selection to existing Browser Use provider classes
-- live-view URL when using the reused noVNC stack
+- create session;
+- run/follow-up task;
+- stream step events;
+- stop/pause/resume;
+- browser settings from UI to existing Browser Use objects;
+- model/provider selection to existing Browser Use provider classes;
+- live-view URL when using the reused noVNC stack;
+- structured non-secret MCP configuration into native `MCPClient`;
+- SHAMYLI-specific safety policy such as Inspect Only.
 
-It must **not** duplicate Browser Use browser logic, provider logic, screenshot logic, profile logic, or automation actions.
+It must **not** duplicate Browser Use browser logic, provider logic, screenshot logic, profile logic, automation actions, MCP protocol/transport, or MCP schema/action registration.
 
 ---
 
-## Next implementation order
+## Current SHAMYLI-specific safety layer
 
-1. Keep the existing modern Chat UI intact.
-2. Replace custom browser configuration with the settings/behavior already proven in `web-ui`.
-3. Reuse `web-ui` noVNC stack for live browser view before considering any custom streaming implementation.
-4. Reuse `web-ui` persistent browser / CDP / own-browser behavior.
-5. Reuse upstream pause/resume and ask-for-assistance behavior.
-6. Only then add SHAMYLI-specific safety controls (Read Only / Safe Edit / approval gates), because those are project-specific requirements.
+- `Inspect Only` is the default.
+- It excludes native Browser Use `click`, `input`, `upload_file`, `send_keys`, and `select_dropdown` actions.
+- It also starts/registers **zero** external MCP tools because an arbitrary MCP server may define state-changing actions.
+- Full Browser Control is explicit and restores native interactions plus explicitly configured MCP servers.
+- MCP UI/exported configuration stores environment-variable names only. Secret values are resolved locally.
+- MCP subprocesses receive only minimal process environment plus explicitly allow-listed variable names, not the entire backend environment.
+
+---
+
+## Current implementation order
+
+1. Keep the modern Chat UI intact.
+2. Reuse current Browser Use browser/profile/provider/Agent APIs through the thin adapter.
+3. Reuse the old Web UI noVNC stack for live browser observation.
+4. Reuse native pause/resume/stop, history, GIF, planning, and Browser Use MCP support.
+5. Add only the project-specific Inspect/Full safety boundary and secret-isolation glue not supplied upstream.
+6. Do not promote the Draft PR until the newest complete CI run is green.
 
 ## Test policy
 
 - Prefer upstream-tested behavior unchanged.
 - Every adapter change must be small and isolated.
-- `main` remains untouched until the integration branch is stable.
+- CI must cover frontend build, backend import/contracts, MCP safety/registration, Docker/noVNC startup, and real local-browser smoke on Ubuntu/Windows before asking the user to act as the test environment.
+- Integration changes stay on `shamyli/chat-ui-local-base` until stable.
 - No production WordPress writes during integration testing.
